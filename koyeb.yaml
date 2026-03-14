@@ -1,0 +1,24 @@
+name: vika-neiro
+service:
+  name: bot
+  instance_type: free
+  ports:
+    - port: 8080
+      protocol: http
+  routes:
+    - path: /
+  env:
+    - name: TELEGRAM_TOKEN
+      value: "8249255843:AAE0fPLcPpmJqyWGK70xJ06mOacatNVEUgc"
+    - name: CLIENT_ID
+      value: "019c9dd5-08ad-714c-8358-5945e8c15fee"
+    - name: CLIENT_SECRET
+      value: "90a0e997-4015-458f-907a-d59f5d9e68a7"
+    - name: KOYEB_APP_NAME
+      value: "vika-neiro"
+  build:
+    commands:
+      - apt-get update
+      - apt-get install -y ffmpeg
+      - pip install -r requirements.txt
+    run: python aiogram_bot.py

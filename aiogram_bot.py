@@ -17,26 +17,25 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.client.default import DefaultBotProperties
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.client.telegram import TelegramAPIServer
-from aiohttp import web  # Добавляем для веб-сервера
+from aiohttp import web
 from database import Database
 from ai_models import DeepSeekModel, OpenRouterModel, GigaChatModel
 
-# ========== НАСТРОЙКИ ДЛЯ RENDER ==========
-# Определяем, запущены ли мы на Render
-IS_RENDER = os.environ.get('RENDER') is not None
+# ========== НАСТРОЙКИ ДЛЯ KOYEB ==========
+# Определяем, запущены ли мы на Koyeb
+IS_KOYEB = os.environ.get('KOYEB_APP_NAME') is not None
 
-if IS_RENDER:
-    # Настройки для Render
-    PORT = int(os.environ.get('PORT', 10000))
+if IS_KOYEB:
+    # Настройки для Koyeb
+    PORT = int(os.environ.get('PORT', 8080))
 
-    # Получаем домен Render
-    RENDER_EXTERNAL_URL = os.environ.get('RENDER_EXTERNAL_URL')
-    if RENDER_EXTERNAL_URL:
-        PUBLIC_DOMAIN = RENDER_EXTERNAL_URL.replace('https://', '')
-    else:
-        PUBLIC_DOMAIN = os.environ.get('RENDER_PUBLIC_DOMAIN', 'localhost')
+    # Получаем домен Koyeb
+    KOYEB_APP_NAME = os.environ.get('KOYEB_APP_NAME', 'vika-neiro')
+    KOYEB_REGION = os.environ.get('KOYEB_REGION', 'was')  # Washington
+    PUBLIC_DOMAIN = f"{KOYEB_APP_NAME}.koyeb.app"
 
-    print(f"🚀 Запуск на Render: {PUBLIC_DOMAIN}:{PORT}")
+    print(f"🚀 Запуск на Koyeb: {PUBLIC_DOMAIN}:{PORT}")
+    print(f"📍 Регион: {KOYEB_REGION}")
 else:
     # Локальный запуск
     PORT = 8080
@@ -49,6 +48,7 @@ try:
     from voice.tts import TTS
 
     VOICE_ENABLED = True
+    print("✅ Голосовые модули найдены")
 except ImportError as e:
     print(f"⚠️ Голосовые модули не загружены: {e}")
     VOICE_ENABLED = False
@@ -106,7 +106,7 @@ model_descriptions = {
     "gigachat": "🇷🇺 **GigaChat**\n• От Сбера\n• Лучший русский язык\n• Бесплатно\n• Поддерживает картинки",
     "deepseek": "🇨🇳 **DeepSeek**\n• 1 млн токенов бесплатно\n• Очень быстрый\n• Отличный код\n• Китайская модель",
     "mistral": "🇪🇺 **Mistral**\n• Европейская модель\n• Открытый код\n• Хороша для логики\n• 7B параметров",
-    "llama": "🦙 **Llama**\n• От Meta (Facebook)\n• Самая популярная\n• 8B параметров\n• Много языков",
+    "llama": "🦙 **Llama**\n• От Meta\n• Самая популярная\n• 8B параметров\n• Много языков",
     "qwen": "🇨🇳 **Qwen**\n• От Alibaba\n• 7B параметров\n• Сильная в математике\n• Поддерживает код",
     "gemma": "🇺🇸 **Gemma**\n• От Google\n• 9B параметров\n• Новая технология\n• Быстрая"
 }
@@ -316,7 +316,7 @@ async def notes_add_callback(callback: types.CallbackQuery):
     )
 
 
-# ========== ОСТАЛЬНЫЕ ОБРАБОТЧИКИ (админка, модель, статистика и т.д.) ==========
+# ========== ОСТАЛЬНЫЕ ОБРАБОТЧИКИ ==========
 
 @dp.message(Command("admin"))
 async def admin_menu(message: types.Message):
@@ -875,14 +875,18 @@ async def handle_message(message: types.Message):
     # Получаем ответ от выбранной AI-модели
     user_model = user_models.get(user_id, "gigachat")
 
-    if user_model == "gigachat":
-        response = giga.ask(message.text, system_prompt)
-    elif user_model == "deepseek":
-        response = deepseek.ask(message.text, system_prompt)
-    elif user_model in ["mistral", "llama", "qwen", "gemma"]:
-        response = openrouter.ask(message.text, model=user_model, system_prompt=system_prompt)
-    else:
-        response = giga.ask(message.text, system_prompt)
+    try:
+        if user_model == "gigachat":
+            response = giga.ask(message.text, system_prompt)
+        elif user_model == "deepseek":
+            response = deepseek.ask(message.text, system_prompt)
+        elif user_model in ["mistral", "llama", "qwen", "gemma"]:
+            response = openrouter.ask(message.text, model=user_model, system_prompt=system_prompt)
+        else:
+            response = giga.ask(message.text, system_prompt)
+    except Exception as e:
+        response = f"❌ Ошибка AI: {str(e)}"
+        logger.error(f"Ошибка AI: {e}")
 
     message_id = db.save_message(user_id, 'assistant', response, mode)
 
@@ -899,7 +903,7 @@ async def handle_message(message: types.Message):
     )
 
 
-# ========== ОБРАБОТЧИК ВЕБХУКА ДЛЯ RENDER ==========
+# ========== ОБРАБОТЧИК ВЕБХУКА ДЛЯ KOYEB ==========
 async def handle_webhook(request: web.Request) -> web.Response:
     """Обрабатывает входящие обновления от Telegram через вебхук"""
     try:
@@ -915,31 +919,39 @@ async def handle_webhook(request: web.Request) -> web.Response:
 async def healthcheck(request: web.Request) -> web.Response:
     """Эндпоинт для проверки здоровья приложения"""
     return web.Response(
-        text=f"Bot is running! Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        text=f"Bot is running on Koyeb! Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
         status=200
     )
 
 
 async def on_startup():
-    """Действия при запуске на Render"""
-    if IS_RENDER and PUBLIC_DOMAIN != 'localhost':
+    """Действия при запуске на Koyeb"""
+    if IS_KOYEB:
         webhook_url = f"https://{PUBLIC_DOMAIN}/webhook"
 
         # Удаляем старый вебхук и устанавливаем новый
         await bot.delete_webhook(drop_pending_updates=True)
-        await bot.set_webhook(
+        result = await bot.set_webhook(
             webhook_url,
             allowed_updates=["message", "callback_query"],
             drop_pending_updates=True
         )
-        logger.info(f"✅ Вебхук установлен на {webhook_url}")
+
+        if result:
+            logger.info(f"✅ Вебхук установлен на {webhook_url}")
+
+            # Проверяем вебхук
+            webhook_info = await bot.get_webhook_info()
+            logger.info(f"📊 Информация о вебхуке: {webhook_info.url}")
+        else:
+            logger.error("❌ Не удалось установить вебхук")
     else:
         logger.info("💻 Локальный режим: вебхук не устанавливается")
 
 
 async def on_shutdown():
     """Действия при остановке"""
-    if IS_RENDER:
+    if IS_KOYEB:
         await bot.delete_webhook()
     await bot.session.close()
     logger.info("✅ Бот остановлен")
@@ -951,8 +963,8 @@ async def main():
     dp.startup.register(on_startup)
     dp.shutdown.register(on_shutdown)
 
-    if IS_RENDER:
-        # Запуск на Render с вебхуками
+    if IS_KOYEB:
+        # Запуск на Koyeb с вебхуками
         app = web.Application()
         app.router.add_post('/webhook', handle_webhook)
         app.router.add_get('/', healthcheck)
