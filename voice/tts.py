@@ -1,21 +1,35 @@
 import subprocess
+import tempfile
+import os
 from pathlib import Path
 import io
 
 
 class TTS:
-    """Text-to-Speech модуль на базе Google TTS"""
+    """Text-to-Speech модуль для Railway"""
 
     def __init__(self):
-        self.language = 'ru'  # по умолчанию русский
+        self.language = 'ru'
         print("✅ TTS инициализирован")
 
     def set_language(self, lang):
-        """Устанавливает язык озвучки (ru/en)"""
+        """Устанавливает язык озвучки"""
         if lang in ['ru', 'en']:
             self.language = lang
             return True
         return False
+
+    def _find_ffmpeg(self):
+        """Ищет ffmpeg в системе"""
+        ffmpeg_paths = [
+            "/usr/bin/ffmpeg",
+            "/usr/local/bin/ffmpeg",
+            "ffmpeg"
+        ]
+        for path in ffmpeg_paths:
+            if os.path.exists(path) or path == "ffmpeg":
+                return path
+        return None
 
     def text_to_ogg(self, text, output_path):
         """
@@ -24,8 +38,11 @@ class TTS:
         try:
             from gtts import gTTS
 
-            # Полный путь к ffmpeg
-            ffmpeg_path = r"C:\ffmpeg\bin\ffmpeg.exe"
+            # Ищем ffmpeg
+            ffmpeg_path = self._find_ffmpeg()
+            if not ffmpeg_path:
+                print("❌ FFmpeg не найден")
+                return None
 
             # Создаём временный MP3 в памяти
             mp3_buffer = io.BytesIO()
@@ -45,7 +62,7 @@ class TTS:
                 '-q:a', '4',
                 '-y', str(output_path)
             ]
-            subprocess.run(cmd, check=True, capture_output=True)
+            subprocess.run(cmd, check=True, capture_output=True, timeout=30)
 
             # Удаляем временный файл
             temp_mp3.unlink()

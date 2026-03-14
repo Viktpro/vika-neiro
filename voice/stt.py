@@ -1,47 +1,49 @@
 import speech_recognition as sr
 import subprocess
-from pathlib import Path
+import tempfile
 import os
+from pathlib import Path
 
 
 class STT:
-    """Speech-to-Text модуль на базе Google Speech Recognition"""
+    """Speech-to-Text модуль для Railway"""
 
     def __init__(self):
         self.recognizer = sr.Recognizer()
-        print("✅ SpeechRecognition инициализирован")
+        print("✅ STT инициализирован")
 
     def _convert_ogg_to_wav(self, ogg_path, wav_path):
         """Конвертирует OGG в WAV используя ffmpeg"""
         try:
-            # Проверяем наличие ffmpeg
-            ffmpeg_path = self._find_ffmpeg()
-            if not ffmpeg_path:
+            # Ищем ffmpeg в разных местах
+            ffmpeg_paths = [
+                "/usr/bin/ffmpeg",
+                "/usr/local/bin/ffmpeg",
+                "ffmpeg"  # надеемся на PATH
+            ]
+
+            ffmpeg_cmd = None
+            for path in ffmpeg_paths:
+                if os.path.exists(path) or path == "ffmpeg":
+                    ffmpeg_cmd = path
+                    break
+
+            if not ffmpeg_cmd:
+                print("❌ FFmpeg не найден")
                 return False
 
             cmd = [
-                ffmpeg_path, '-i', str(ogg_path),
+                ffmpeg_cmd, '-i', str(ogg_path),
                 '-ar', '16000',
                 '-ac', '1',
                 '-y', str(wav_path)
             ]
-            subprocess.run(cmd, check=True, capture_output=True, timeout=30)
-            return True
+            result = subprocess.run(cmd, capture_output=True, timeout=30)
+            return result.returncode == 0
+
         except Exception as e:
             print(f"Ошибка конвертации: {e}")
             return False
-
-    def _find_ffmpeg(self):
-        """Ищет ffmpeg в системе"""
-        possible_paths = [
-            r"C:\ffmpeg\bin\ffmpeg.exe",
-            "/usr/bin/ffmpeg",
-            "/usr/local/bin/ffmpeg"
-        ]
-        for path in possible_paths:
-            if os.path.exists(path):
-                return path
-        return "ffmpeg"  # надеемся, что в PATH
 
     def audio_to_text(self, ogg_file_path):
         """
