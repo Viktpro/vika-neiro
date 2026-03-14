@@ -1,7 +1,7 @@
 {
   "build": {
     "builder": "NIXPACKS",
-    "buildCommand": "apt-get update && apt-get install -y ffmpeg && pip install -r requirements.txt"
+    "buildCommand": "pip install -r requirements.txt"
   },
   "deploy": {
     "startCommand": "python aiogram_bot.py",
