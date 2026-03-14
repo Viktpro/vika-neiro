@@ -32,7 +32,18 @@ CLIENT_SECRET = os.environ.get('CLIENT_SECRET', "90a0e997-4015-458f-907a-d59f5d9
 ADMIN_IDS = [1467484237, 8249255843]
 
 PORT = int(os.environ.get('PORT', 8080))
-RAILWAY_PUBLIC_DOMAIN = os.environ.get('RAILWAY_PUBLIC_DOMAIN', 'localhost')
+
+# Автоматическое определение домена Railway
+RAILWAY_PUBLIC_DOMAIN = os.environ.get('RAILWAY_PUBLIC_DOMAIN')
+if not RAILWAY_PUBLIC_DOMAIN:
+    # Пробуем получить из Railway public URL
+    railway_url = os.environ.get('RAILWAY_STATIC_URL')
+    if railway_url:
+        RAILWAY_PUBLIC_DOMAIN = railway_url.replace('https://', '')
+    else:
+        RAILWAY_PUBLIC_DOMAIN = 'localhost'
+        print("⚠️ ВНИМАНИЕ: Домен не определён! Вебхук не будет работать!")
+        print("⚠️ Добавьте переменную RAILWAY_PUBLIC_DOMAIN в Railway")
 
 print(f"🔑 Токен загружен: {TELEGRAM_TOKEN[:10]}...")
 print(f"🔑 Client ID: {CLIENT_ID[:10]}...")
@@ -654,15 +665,35 @@ async def healthcheck(request: web.Request) -> web.Response:
 
 # ========== ФУНКЦИИ ЗАПУСКА И ОСТАНОВКИ ==========
 async def on_startup():
+    if RAILWAY_PUBLIC_DOMAIN == 'localhost':
+        logger.error("❌ НЕВОЗМОЖНО УСТАНОВИТЬ ВЕБХУК: домен не определён!")
+        logger.error("❌ Добавьте переменную RAILWAY_PUBLIC_DOMAIN в Railway")
+        return
+
     webhook_url = f"https://{RAILWAY_PUBLIC_DOMAIN}/webhook"
 
-    await bot.delete_webhook(drop_pending_updates=True)
-    await bot.set_webhook(
-        webhook_url,
-        allowed_updates=dp.resolve_used_update_types(),
-        drop_pending_updates=True
-    )
-    logger.info(f"✅ Вебхук установлен на {webhook_url}")
+    try:
+        # Удаляем старый вебхук
+        await bot.delete_webhook(drop_pending_updates=True)
+
+        # Устанавливаем новый
+        result = await bot.set_webhook(
+            webhook_url,
+            allowed_updates=["message", "callback_query"],
+            drop_pending_updates=True
+        )
+
+        if result:
+            logger.info(f"✅ Вебхук установлен на {webhook_url}")
+
+            # Проверяем вебхук
+            webhook_info = await bot.get_webhook_info()
+            logger.info(f"📊 Информация о вебхуке: {webhook_info.url}")
+        else:
+            logger.error("❌ Не удалось установить вебхук")
+
+    except Exception as e:
+        logger.error(f"❌ Ошибка при установке вебхука: {e}")
 
     bot_info = await bot.get_me()
     logger.info(f"🚀 Бот @{bot_info.username} запущен!")
@@ -691,7 +722,13 @@ async def main():
     await site.start()
 
     logger.info(f"🌐 Веб-сервер запущен на порту {PORT}")
-    logger.info("🤖 Бот ожидает обновления через вебхуки...")
+
+    if RAILWAY_PUBLIC_DOMAIN == 'localhost':
+        logger.warning("⚠️ Домен не определён! Вебхуки работать не будут!")
+        logger.warning("⚠️ Добавьте RAILWAY_PUBLIC_DOMAIN в переменные окружения")
+    else:
+        logger.info(f"🔗 URL вебхука: https://{RAILWAY_PUBLIC_DOMAIN}/webhook")
+        logger.info("🤖 Бот ожидает обновления через вебхуки...")
 
     try:
         await asyncio.Event().wait()
