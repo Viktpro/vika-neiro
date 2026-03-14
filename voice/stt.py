@@ -1,6 +1,7 @@
 import speech_recognition as sr
 import subprocess
 from pathlib import Path
+import os
 
 
 class STT:
@@ -13,7 +14,10 @@ class STT:
     def _convert_ogg_to_wav(self, ogg_path, wav_path):
         """Конвертирует OGG в WAV используя ffmpeg"""
         try:
-            ffmpeg_path = r"C:\ffmpeg\bin\ffmpeg.exe"
+            # Проверяем наличие ffmpeg
+            ffmpeg_path = self._find_ffmpeg()
+            if not ffmpeg_path:
+                return False
 
             cmd = [
                 ffmpeg_path, '-i', str(ogg_path),
@@ -21,11 +25,23 @@ class STT:
                 '-ac', '1',
                 '-y', str(wav_path)
             ]
-            subprocess.run(cmd, check=True, capture_output=True)
+            subprocess.run(cmd, check=True, capture_output=True, timeout=30)
             return True
         except Exception as e:
             print(f"Ошибка конвертации: {e}")
             return False
+
+    def _find_ffmpeg(self):
+        """Ищет ffmpeg в системе"""
+        possible_paths = [
+            r"C:\ffmpeg\bin\ffmpeg.exe",
+            "/usr/bin/ffmpeg",
+            "/usr/local/bin/ffmpeg"
+        ]
+        for path in possible_paths:
+            if os.path.exists(path):
+                return path
+        return "ffmpeg"  # надеемся, что в PATH
 
     def audio_to_text(self, ogg_file_path):
         """
@@ -39,11 +55,14 @@ class STT:
             return "❌ Ошибка конвертации аудио"
 
         try:
+            # Загружаем аудиофайл
             with sr.AudioFile(str(wav_path)) as source:
                 audio = self.recognizer.record(source)
 
+            # Используем Google Speech Recognition
             text = self.recognizer.recognize_google(audio, language='ru-RU')
 
+            # Удаляем временный файл
             try:
                 wav_path.unlink()
             except:
