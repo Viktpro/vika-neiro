@@ -17,38 +17,47 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.client.default import DefaultBotProperties
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.client.telegram import TelegramAPIServer
-from aiohttp import web
+from aiohttp import web  # Добавляем для веб-сервера
 from database import Database
 from ai_models import DeepSeekModel, OpenRouterModel, GigaChatModel
 
-# ========== НАСТРОЙКИ ==========
-TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN')
-if not TELEGRAM_TOKEN:
-    TELEGRAM_TOKEN = "8249255843:AAE0fPLcPpmJqyWGK70xJ06mOacatNVEUgc"
-    print("⚠️ Токен взят из кода (не из переменных окружения)")
+# ========== НАСТРОЙКИ ДЛЯ RENDER ==========
+# Определяем, запущены ли мы на Render
+IS_RENDER = os.environ.get('RENDER') is not None
 
-CLIENT_ID = os.environ.get('CLIENT_ID', "019c9dd5-08ad-714c-8358-5945e8c15fee")
-CLIENT_SECRET = os.environ.get('CLIENT_SECRET', "90a0e997-4015-458f-907a-d59f5d9e68a7")
-ADMIN_IDS = [1467484237, 8249255843]
+if IS_RENDER:
+    # Настройки для Render
+    PORT = int(os.environ.get('PORT', 10000))
 
-PORT = int(os.environ.get('PORT', 8080))
-
-# Автоматическое определение домена Railway
-RAILWAY_PUBLIC_DOMAIN = os.environ.get('RAILWAY_PUBLIC_DOMAIN')
-if not RAILWAY_PUBLIC_DOMAIN:
-    # Пробуем получить из Railway public URL
-    railway_url = os.environ.get('RAILWAY_STATIC_URL')
-    if railway_url:
-        RAILWAY_PUBLIC_DOMAIN = railway_url.replace('https://', '')
+    # Получаем домен Render
+    RENDER_EXTERNAL_URL = os.environ.get('RENDER_EXTERNAL_URL')
+    if RENDER_EXTERNAL_URL:
+        PUBLIC_DOMAIN = RENDER_EXTERNAL_URL.replace('https://', '')
     else:
-        RAILWAY_PUBLIC_DOMAIN = 'localhost'
-        print("⚠️ ВНИМАНИЕ: Домен не определён! Вебхук не будет работать!")
-        print("⚠️ Добавьте переменную RAILWAY_PUBLIC_DOMAIN в Railway")
+        PUBLIC_DOMAIN = os.environ.get('RENDER_PUBLIC_DOMAIN', 'localhost')
 
-print(f"🔑 Токен загружен: {TELEGRAM_TOKEN[:10]}...")
-print(f"🔑 Client ID: {CLIENT_ID[:10]}...")
-print(f"🌐 Публичный домен: {RAILWAY_PUBLIC_DOMAIN}")
-print(f"🚪 Порт: {PORT}")
+    print(f"🚀 Запуск на Render: {PUBLIC_DOMAIN}:{PORT}")
+else:
+    # Локальный запуск
+    PORT = 8080
+    PUBLIC_DOMAIN = 'localhost'
+    print("💻 Локальный запуск")
+
+# ========== ГОЛОСОВЫЕ МОДУЛИ ==========
+try:
+    from voice.stt import STT
+    from voice.tts import TTS
+
+    VOICE_ENABLED = True
+except ImportError as e:
+    print(f"⚠️ Голосовые модули не загружены: {e}")
+    VOICE_ENABLED = False
+
+# ========== НАСТРОЙКИ ==========
+TELEGRAM_TOKEN = "8249255843:AAE0fPLcPpmJqyWGK70xJ06mOacatNVEUgc"
+CLIENT_ID = "019c9dd5-08ad-714c-8358-5945e8c15fee"
+CLIENT_SECRET = "90a0e997-4015-458f-907a-d59f5d9e68a7"
+ADMIN_IDS = [1467484237, 8249255843]  # Оба твоих ID
 
 # ========== ИНИЦИАЛИЗАЦИЯ ==========
 admin_states = {}
@@ -60,11 +69,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Создаём сессию с большим таймаутом для стабильности
 session = AiohttpSession(
     api=TelegramAPIServer.from_base('https://api.telegram.org'),
-    timeout=300
+    timeout=300  # Увеличенный таймаут до 5 минут
 )
 
+# Создаём бота с этой сессией
 bot = Bot(
     token=TELEGRAM_TOKEN,
     session=session,
@@ -72,30 +83,15 @@ bot = Bot(
 )
 dp = Dispatcher()
 
-# ========== ГОЛОСОВЫЕ МОДУЛИ ==========
-try:
-    from voice.stt import STT
-    from voice.tts import TTS
-
-    VOICE_ENABLED = True
-    try:
-        stt = STT()
-        tts = TTS()
-        print("✅ Голосовые модули инициализированы")
-    except Exception as e:
-        print(f"❌ Ошибка инициализации голоса: {e}")
-        VOICE_ENABLED = False
-except ImportError as e:
-    print(f"⚠️ Голосовые модули не загружены: {e}")
-    VOICE_ENABLED = False
-
 # ========== ИНИЦИАЛИЗАЦИЯ AI-МОДЕЛЕЙ ==========
 giga = GigaChatModel(CLIENT_ID, CLIENT_SECRET)
 deepseek = DeepSeekModel()
 openrouter = OpenRouterModel()
 
+# Хранилище выбранной модели для каждого пользователя
 user_models = {}
 
+# Словарь с названиями моделей для красивого отображения
 model_names = {
     "gigachat": "🇷🇺 GigaChat",
     "deepseek": "🇨🇳 DeepSeek",
@@ -105,30 +101,48 @@ model_names = {
     "gemma": "🇺🇸 Gemma"
 }
 
+# Словарь с описаниями моделей
 model_descriptions = {
-    "gigachat": "🇷🇺 **GigaChat**\n• От Сбера\n• Лучший русский язык\n• Бесплатно",
-    "deepseek": "🇨🇳 **DeepSeek**\n• 1 млн токенов бесплатно\n• Очень быстрый\n• Отличный код",
-    "mistral": "🇪🇺 **Mistral**\n• Европейская модель\n• Открытый код\n• Хороша для логики",
-    "llama": "🦙 **Llama**\n• От Meta\n• Самая популярная\n• 8B параметров",
-    "qwen": "🇨🇳 **Qwen**\n• От Alibaba\n• 7B параметров\n• Сильная в математике",
-    "gemma": "🇺🇸 **Gemma**\n• От Google\n• 9B параметров\n• Новая технология"
+    "gigachat": "🇷🇺 **GigaChat**\n• От Сбера\n• Лучший русский язык\n• Бесплатно\n• Поддерживает картинки",
+    "deepseek": "🇨🇳 **DeepSeek**\n• 1 млн токенов бесплатно\n• Очень быстрый\n• Отличный код\n• Китайская модель",
+    "mistral": "🇪🇺 **Mistral**\n• Европейская модель\n• Открытый код\n• Хороша для логики\n• 7B параметров",
+    "llama": "🦙 **Llama**\n• От Meta (Facebook)\n• Самая популярная\n• 8B параметров\n• Много языков",
+    "qwen": "🇨🇳 **Qwen**\n• От Alibaba\n• 7B параметров\n• Сильная в математике\n• Поддерживает код",
+    "gemma": "🇺🇸 **Gemma**\n• От Google\n• 9B параметров\n• Новая технология\n• Быстрая"
 }
 
+# Инициализация голосовых модулей
+if VOICE_ENABLED:
+    try:
+        stt = STT()
+        tts = TTS()
+        logger.info("✅ Голосовые модули инициализированы")
+    except Exception as e:
+        logger.error(f"❌ Ошибка инициализации голосовых модулей: {e}")
+        VOICE_ENABLED = False
+
+# ========== ИНТЕРЕСНЫЕ ФАКТЫ ==========
 FACTS = [
     "🧠 Язык программирования Python назван в честь комедийного шоу Monty Python, а не в честь змеи.",
     "📱 Первое SMS-сообщение было отправлено в 1992 году и содержало текст «Merry Christmas».",
     "💻 Первый компьютерный вирус был создан в 1983 году и назывался «Elk Cloner».",
-    "🔍 Google изначально назывался Backrub.",
+    "🔍 Google изначально назывался Backrub (массаж спины).",
     "🎮 Самой продаваемой видеоигрой в истории является Minecraft.",
     "🌐 Первый веб-сайт в мире до сих пор работает: info.cern.ch",
+    "📊 Более 90% всех данных в мире было создано за последние 2 года.",
+    "⚡ Скорость загрузки интернета на Марсе составляет всего 500 кбит/с.",
+    "🧮 Первый жесткий диск весил больше тонны и хранил всего 5 МБ данных.",
+    "📧 Символ @ в email называется «собачкой» только в России.",
 ]
 
 
+# ========== ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ==========
 def is_admin(user_id):
+    """Проверяет, является ли пользователь админом"""
     return str(user_id) in [str(admin_id) for admin_id in ADMIN_IDS]
 
 
-# ========== ОБРАБОТЧИКИ КОМАНД ==========
+# ========== ОБРАБОТЧИКИ ==========
 
 @dp.message(Command("start"))
 async def start(message: types.Message):
@@ -137,6 +151,7 @@ async def start(message: types.Message):
     first_name = message.from_user.first_name
     last_name = message.from_user.last_name
 
+    # Если нет имени, используем "друг"
     if not first_name:
         first_name = "друг"
 
@@ -158,16 +173,171 @@ async def start(message: types.Message):
     else:
         keyboard.adjust(2, 2, 2, 2, 1)
 
+    voice_status = "🎤 Голосовой ввод активен" if VOICE_ENABLED else "⚠️ Голосовой режим недоступен"
+
     current_model = user_models.get(user_id, "gigachat")
     model_display = model_names.get(current_model, current_model)
-    voice_status = "🎤 Голос активен" if VOICE_ENABLED else "⚠️ Голос отключен"
 
     await message.answer(
         f"👋 **Привет, {first_name}!**\n\n"
-        f"🧠 **Нейробот Вики**\n"
-        f"🤖 **Модель:** {model_display}\n"
-        f"{voice_status}\n\n"
-        f"👇 **Выбери режим:**",
+        f"🧠 **Главное меню Нейробота Вики**\n"
+        f"🤖 **Текущая модель:** {model_display}\n\n"
+        f"👇 **Выбери режим:**\n"
+        f"_{voice_status}_",
+        parse_mode="Markdown",
+        reply_markup=keyboard.as_markup()
+    )
+
+
+# ========== ЗАПИСНОЙ БЛОКНОТ ==========
+
+@dp.message(Command("note"))
+async def note_command(message: types.Message):
+    """Добавить заметку"""
+    text = message.text.replace("/note", "", 1).strip()
+    if not text:
+        await message.answer(
+            "📝 **Как пользоваться заметками:**\n\n"
+            "/note текст - сохранить заметку\n"
+            "/notes - показать все заметки\n"
+            "/delnote номер - удалить заметку\n\n"
+            "Пример: /note Купить молоко",
+            parse_mode="Markdown"
+        )
+        return
+
+    user_id = message.from_user.id
+    note_id = db.save_note(user_id, text)
+
+    await message.answer(
+        f"✅ **Заметка сохранена!**\n\n"
+        f"📝 `{text}`\n\n"
+        f"📌 Номер заметки: {note_id}\n"
+        f"Используй /notes чтобы увидеть все",
+        parse_mode="Markdown"
+    )
+
+
+@dp.message(Command("notes"))
+async def notes_command(message: types.Message):
+    """Показать все заметки"""
+    user_id = message.from_user.id
+    notes = db.get_notes(user_id)
+
+    if not notes:
+        await message.answer(
+            "📭 **У тебя пока нет заметок**\n\n"
+            "Чтобы создать заметку, напиши:\n"
+            "/note твой текст",
+            parse_mode="Markdown"
+        )
+        return
+
+    text = "📝 **Твои заметки:**\n\n"
+    for i, note in enumerate(notes[:20], 1):
+        created = note['created_at'][:16] if note['created_at'] else ""
+        text += f"{i}. `{note['note']}`\n"
+        text += f"   🆔 {note['id']} | {created}\n\n"
+
+    text += "\n_Удалить заметку: /delnote номер_"
+
+    # Разбиваем, если слишком длинное сообщение
+    if len(text) > 4000:
+        for chunk in [text[i:i + 4000] for i in range(0, len(text), 4000)]:
+            await message.answer(chunk, parse_mode="Markdown")
+    else:
+        await message.answer(text, parse_mode="Markdown")
+
+
+@dp.message(Command("delnote"))
+async def delnote_command(message: types.Message):
+    """Удалить заметку по ID"""
+    args = message.text.split()
+    if len(args) < 2:
+        await message.answer(
+            "❌ **Укажи номер заметки**\n\n"
+            "Пример: /delnote 5\n"
+            "Номер можно узнать через /notes",
+            parse_mode="Markdown"
+        )
+        return
+
+    try:
+        note_id = int(args[1])
+        user_id = message.from_user.id
+
+        # Проверяем, что заметка принадлежит пользователю
+        if db.delete_note(note_id, user_id):
+            await message.answer(f"✅ **Заметка {note_id} удалена**", parse_mode="Markdown")
+        else:
+            await message.answer(
+                f"❌ **Заметка {note_id} не найдена**\n\n"
+                f"Убедись, что номер правильный",
+                parse_mode="Markdown"
+            )
+    except ValueError:
+        await message.answer("❌ **Номер должен быть числом**", parse_mode="Markdown")
+
+
+@dp.callback_query(lambda c: c.data == "notes_menu")
+async def notes_menu_callback(callback: types.CallbackQuery):
+    """Меню заметок"""
+    keyboard = InlineKeyboardBuilder()
+    keyboard.add(InlineKeyboardButton(text="📝 Показать заметки", callback_data="notes_show"))
+    keyboard.add(InlineKeyboardButton(text="➕ Добавить заметку", callback_data="notes_add"))
+    keyboard.add(InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main"))
+    keyboard.adjust(1)
+
+    await callback.message.edit_text(
+        "📝 **Записной блокнот**\n\n"
+        "Здесь ты можешь хранить свои заметки.\n"
+        "Они сохраняются в базе данных и не пропадают после перезапуска бота.",
+        parse_mode="Markdown",
+        reply_markup=keyboard.as_markup()
+    )
+
+
+@dp.callback_query(lambda c: c.data == "notes_show")
+async def notes_show_callback(callback: types.CallbackQuery):
+    """Показать заметки через кнопку"""
+    await callback.answer()
+    await notes_command(callback.message)
+
+
+@dp.callback_query(lambda c: c.data == "notes_add")
+async def notes_add_callback(callback: types.CallbackQuery):
+    """Добавить заметку через кнопку"""
+    await callback.answer()
+    await callback.message.answer(
+        "📝 **Напиши текст заметки**\n"
+        "Например: Купить молоко и хлеб\n\n"
+        "Используй команду /note текст",
+        parse_mode="Markdown"
+    )
+
+
+# ========== ОСТАЛЬНЫЕ ОБРАБОТЧИКИ (админка, модель, статистика и т.д.) ==========
+
+@dp.message(Command("admin"))
+async def admin_menu(message: types.Message):
+    user_id = message.from_user.id
+
+    if not is_admin(user_id):
+        await message.answer(f"⛔ У вас нет прав администратора. Ваш ID: {user_id}")
+        return
+
+    keyboard = InlineKeyboardBuilder()
+    keyboard.add(InlineKeyboardButton(text="📋 Список промптов", callback_data="admin_list"))
+    keyboard.add(InlineKeyboardButton(text="✏️ Редактировать", callback_data="admin_edit_menu"))
+    keyboard.add(InlineKeyboardButton(text="➕ Новый режим", callback_data="admin_add"))
+    keyboard.add(InlineKeyboardButton(text="❌ Удалить режим", callback_data="admin_delete"))
+    keyboard.add(InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main"))
+    keyboard.adjust(2, 2, 1)
+
+    voice_status = "✅ Голосовой модуль работает" if VOICE_ENABLED else "❌ Голосовой модуль отключен"
+
+    await message.answer(
+        f"🛠️ **Панель администратора**\n\n{voice_status}",
         parse_mode="Markdown",
         reply_markup=keyboard.as_markup()
     )
@@ -175,6 +345,7 @@ async def start(message: types.Message):
 
 @dp.message(Command("model"))
 async def model_command(message: types.Message):
+    """Выбор AI-модели с описаниями"""
     keyboard = InlineKeyboardBuilder()
     keyboard.add(InlineKeyboardButton(text="🇷🇺 GigaChat", callback_data="model_gigachat"))
     keyboard.add(InlineKeyboardButton(text="🇨🇳 DeepSeek", callback_data="model_deepseek"))
@@ -193,70 +364,17 @@ async def model_command(message: types.Message):
 
     for model_key, desc in model_descriptions.items():
         if model_key == current_model:
-            text += f"⭐ {desc} (текущая)\n\n"
+            text += f"⭐ **{desc}** (текущая)\n\n"
         else:
             text += f"• {desc}\n\n"
 
-    await message.answer(text, parse_mode="Markdown", reply_markup=keyboard.as_markup())
+    text += "_Нажми на кнопку, чтобы выбрать модель_"
 
-
-@dp.message(Command("help"))
-async def help_command(message: types.Message):
     await message.answer(
-        "🤖 **Доступные команды:**\n\n"
-        "📌 **Основные:**\n"
-        "/start - Главное меню\n"
-        "/help - Эта справка\n"
-        "/stats - Твоя статистика\n"
-        "/clear - Сбросить диалог\n\n"
-        "📝 **Заметки:**\n"
-        "/note текст - сохранить заметку\n"
-        "/notes - показать заметки\n"
-        "/delnote номер - удалить заметку\n\n"
-        "🤖 **AI-модели:**\n"
-        "/model - Выбрать нейросеть\n\n"
-        "🔧 **Полезные:**\n"
-        "/time - Текущее время\n"
-        "/random - Случайное число\n"
-        "/fact - Интересный факт\n\n"
-        "🎤 **Голос:**\n"
-        "/voice_ru - Русский голос\n"
-        "/voice_en - Английский голос\n"
-        "Или просто отправь голосовое сообщение!",
-        parse_mode="Markdown"
+        text,
+        parse_mode="Markdown",
+        reply_markup=keyboard.as_markup()
     )
-
-
-@dp.message(Command("time"))
-async def time_command(message: types.Message):
-    now = datetime.now()
-    await message.answer(
-        f"📅 **Сегодня:** {now.strftime('%d.%m.%Y')}\n"
-        f"⏰ **Точное время:** {now.strftime('%H:%M:%S')}",
-        parse_mode="Markdown"
-    )
-
-
-@dp.message(Command("random"))
-async def random_command(message: types.Message):
-    args = message.text.split()
-    if len(args) == 3:
-        try:
-            min_num = int(args[1])
-            max_num = int(args[2])
-            number = random.randint(min_num, max_num)
-            await message.answer(f"🎲 **Случайное число от {min_num} до {max_num}:** {number}")
-        except:
-            await message.answer("❌ Используй: /random мин макс")
-    else:
-        number = random.randint(1, 100)
-        await message.answer(f"🎲 **Случайное число:** {number}")
-
-
-@dp.message(Command("fact"))
-async def fact_command(message: types.Message):
-    fact = random.choice(FACTS)
-    await message.answer(f"🔮 **Интересный факт:**\n\n{fact}", parse_mode="Markdown")
 
 
 @dp.message(Command("stats"))
@@ -276,26 +394,72 @@ async def clear_command(message: types.Message):
     await message.answer("✅ Диалог сброшен. /start")
 
 
-@dp.message(Command("voice_ru"))
-async def voice_ru(message: types.Message):
-    if VOICE_ENABLED:
-        tts.set_language('ru')
-        await message.answer("✅ Голос переключён на **русский**", parse_mode="Markdown")
-    else:
-        await message.answer("❌ Голосовой режим недоступен")
+@dp.message(Command("time"))
+async def time_command(message: types.Message):
+    """Показывает текущую дату и время"""
+    now = datetime.now()
+    await message.answer(
+        f"📅 **Сегодня:** {now.strftime('%d.%m.%Y')}\n"
+        f"⏰ **Точное время:** {now.strftime('%H:%M:%S')}",
+        parse_mode="Markdown"
+    )
 
 
-@dp.message(Command("voice_en"))
-async def voice_en(message: types.Message):
-    if VOICE_ENABLED:
-        tts.set_language('en')
-        await message.answer("✅ Голос переключён на **английский**", parse_mode="Markdown")
+@dp.message(Command("random"))
+async def random_command(message: types.Message):
+    """Генерирует случайное число"""
+    args = message.text.split()
+    if len(args) == 3:
+        try:
+            min_num = int(args[1])
+            max_num = int(args[2])
+            number = random.randint(min_num, max_num)
+            await message.answer(f"🎲 **Случайное число от {min_num} до {max_num}:** {number}")
+        except:
+            await message.answer("❌ Используй: /random мин макс")
     else:
-        await message.answer("❌ Голосовой режим недоступен")
+        number = random.randint(1, 100)
+        await message.answer(f"🎲 **Случайное число:** {number}")
+
+
+@dp.message(Command("fact"))
+async def fact_command(message: types.Message):
+    """Показывает случайный интересный факт"""
+    fact = random.choice(FACTS)
+    await message.answer(f"🔮 **Интересный факт:**\n\n{fact}", parse_mode="Markdown")
+
+
+@dp.message(Command("help"))
+async def help_command(message: types.Message):
+    """Показывает список всех команд"""
+    await message.answer(
+        "🤖 **Доступные команды:**\n\n"
+        "📌 **Основные:**\n"
+        "/start - Главное меню\n"
+        "/help - Эта справка\n"
+        "/stats - Твоя статистика\n"
+        "/clear - Сбросить диалог\n\n"
+        "📝 **Заметки:**\n"
+        "/note текст - сохранить заметку\n"
+        "/notes - показать заметки\n"
+        "/delnote номер - удалить заметку\n\n"
+        "🤖 **AI-модели:**\n"
+        "/model - Выбрать нейросеть\n\n"
+        "🔧 **Полезные:**\n"
+        "/time - Текущее время\n"
+        "/random - Случайное число\n"
+        "/fact - Интересный факт\n\n"
+        "🎤 **Голосовой режим:**\n"
+        "/voice_ru - Русский голос\n"
+        "/voice_en - Английский голос\n"
+        "Или просто отправь голосовое сообщение!",
+        parse_mode="Markdown"
+    )
 
 
 @dp.message(Command("cancel"))
 async def cancel_command(message: types.Message):
+    """Отменяет текущее действие"""
     user_id = message.from_user.id
     cancelled = False
 
@@ -310,174 +474,26 @@ async def cancel_command(message: types.Message):
         await message.answer("❌ Нет активных действий для отмены")
 
 
-# ========== ЗАМЕТКИ ==========
-
-@dp.message(Command("note"))
-async def note_command(message: types.Message):
-    text = message.text.replace("/note", "", 1).strip()
-    if not text:
-        await message.answer(
-            "📝 **Как пользоваться заметками:**\n\n"
-            "/note текст - сохранить заметку\n"
-            "/notes - показать заметки\n"
-            "/delnote номер - удалить заметку",
-            parse_mode="Markdown"
-        )
-        return
-
-    user_id = message.from_user.id
-    note_id = db.save_note(user_id, text)
-
-    await message.answer(
-        f"✅ **Заметка сохранена!**\n\n"
-        f"📝 {text}\n\n"
-        f"📌 Номер: {note_id}",
-        parse_mode="Markdown"
-    )
+@dp.message(Command("voice_ru"))
+async def voice_ru(message: types.Message):
+    """Русский голос"""
+    if VOICE_ENABLED:
+        tts.set_language('ru')
+        await message.answer("✅ Голос переключён на **русский**", parse_mode="Markdown")
+    else:
+        await message.answer("❌ Голосовой режим недоступен")
 
 
-@dp.message(Command("notes"))
-async def notes_command(message: types.Message):
-    user_id = message.from_user.id
-    notes = db.get_notes(user_id)
-
-    if not notes:
-        await message.answer(
-            "📭 **У тебя пока нет заметок**\n\n"
-            "/note текст - создать заметку",
-            parse_mode="Markdown"
-        )
-        return
-
-    text = "📝 **Твои заметки:**\n\n"
-    for note in notes[:10]:
-        created = note['created_at'][:16] if note['created_at'] else ""
-        text += f"📌 `{note['note']}`\n"
-        text += f"   🆔 {note['id']} | {created}\n\n"
-
-    await message.answer(text, parse_mode="Markdown")
+@dp.message(Command("voice_en"))
+async def voice_en(message: types.Message):
+    """Английский голос"""
+    if VOICE_ENABLED:
+        tts.set_language('en')
+        await message.answer("✅ Голос переключён на **английский**", parse_mode="Markdown")
+    else:
+        await message.answer("❌ Голосовой режим недоступен")
 
 
-@dp.message(Command("delnote"))
-async def delnote_command(message: types.Message):
-    args = message.text.split()
-    if len(args) < 2:
-        await message.answer("❌ **Укажи номер заметки**\n\nПример: /delnote 5", parse_mode="Markdown")
-        return
-
-    try:
-        note_id = int(args[1])
-        user_id = message.from_user.id
-
-        if db.delete_note(note_id, user_id):
-            await message.answer(f"✅ **Заметка {note_id} удалена**", parse_mode="Markdown")
-        else:
-            await message.answer(f"❌ **Заметка {note_id} не найдена**", parse_mode="Markdown")
-    except ValueError:
-        await message.answer("❌ **Номер должен быть числом**", parse_mode="Markdown")
-
-
-# ========== ОБРАБОТЧИК ГОЛОСОВЫХ СООБЩЕНИЙ ==========
-@dp.message(lambda message: message.voice is not None)
-async def voice_message_handler(message: types.Message):
-    if not VOICE_ENABLED:
-        await message.answer("❌ Голосовой режим временно недоступен. Отправь текст.")
-        return
-
-    user_id = message.from_user.id
-    logger.info(f"🎤 Получено голосовое сообщение от пользователя {user_id}")
-
-    mode = db.get_user_mode(user_id)
-    system_prompt = db.get_prompt(mode) or "Ты полезный ассистент."
-
-    status_msg = await message.answer("🎤 Распознаю речь...")
-    temp_files = []
-
-    try:
-        file = await message.bot.get_file(message.voice.file_id)
-
-        with tempfile.NamedTemporaryFile(suffix='.ogg', delete=False) as tmp_file:
-            await message.bot.download_file(file.file_path, tmp_file.name)
-            ogg_path = tmp_file.name
-            temp_files.append(ogg_path)
-
-        await status_msg.edit_text("🔄 Преобразую речь в текст...")
-        recognized_text = stt.audio_to_text(ogg_path)
-
-        if recognized_text.startswith("❌") or recognized_text.startswith("🔇"):
-            await status_msg.edit_text(recognized_text)
-            return
-
-        await status_msg.edit_text(
-            f"📝 **Распознано:**\n{recognized_text}\n\n🤔 Думаю...",
-            parse_mode="Markdown"
-        )
-
-        db.save_message(user_id, 'user', f"[голосовое] {recognized_text}", mode)
-        user_model = user_models.get(user_id, "gigachat")
-
-        if user_model == "gigachat":
-            response = giga.ask(recognized_text, system_prompt)
-        elif user_model == "deepseek":
-            response = deepseek.ask(recognized_text, system_prompt)
-        elif user_model in ["mistral", "llama", "qwen", "gemma"]:
-            response = openrouter.ask(recognized_text, model=user_model, system_prompt=system_prompt)
-        else:
-            response = giga.ask(recognized_text, system_prompt)
-
-        message_id = db.save_message(user_id, 'assistant', response, mode)
-
-        await status_msg.edit_text("🔊 Создаю голосовой ответ...")
-
-        with tempfile.NamedTemporaryFile(suffix='.ogg', delete=False) as tmp_file:
-            output_path = tmp_file.name
-            temp_files.append(output_path)
-
-        voice_path = tts.text_to_ogg(response, output_path)
-
-        if voice_path and Path(voice_path).exists():
-            from aiogram.types import FSInputFile
-            voice_file = FSInputFile(voice_path)
-
-            await message.answer_voice(
-                voice=voice_file,
-                caption="_Голосовой ответ сгенерирован_",
-                parse_mode="Markdown"
-            )
-
-            keyboard = InlineKeyboardBuilder()
-            keyboard.add(InlineKeyboardButton(text="👍", callback_data=f"like_{message_id}"))
-            keyboard.add(InlineKeyboardButton(text="👎", callback_data=f"dislike_{message_id}"))
-
-            await message.answer(
-                response + "\n\n_Оцени ответ, пожалуйста:_",
-                parse_mode="Markdown",
-                reply_markup=keyboard.as_markup()
-            )
-
-            await status_msg.delete()
-        else:
-            await status_msg.edit_text(
-                response + "\n\n_(не удалось создать голос, ответ текстом)_",
-                parse_mode="Markdown"
-            )
-
-    except Exception as e:
-        logger.error(f"❌ Ошибка обработки голоса: {e}", exc_info=True)
-        await status_msg.edit_text(
-            f"❌ Произошла ошибка при обработке голосового сообщения.\n"
-            f"Попробуй отправить текст."
-        )
-
-    finally:
-        for file_path in temp_files:
-            try:
-                os.unlink(file_path)
-            except:
-                pass
-
-
-# ========== ОБРАБОТЧИК КНОПОК ==========
 @dp.callback_query()
 async def callback_handler(callback: types.CallbackQuery):
     await callback.answer()
@@ -486,6 +502,7 @@ async def callback_handler(callback: types.CallbackQuery):
     first_name = callback.from_user.first_name
     last_name = callback.from_user.last_name
 
+    # Лайки
     if callback.data.startswith(('like_', 'dislike_')):
         parts = callback.data.split('_')
         rating = 1 if parts[0] == 'like' else -1
@@ -497,64 +514,156 @@ async def callback_handler(callback: types.CallbackQuery):
         )
         return
 
+    # Возврат в главное меню
     if callback.data == "back_to_main":
         await start(callback.message)
         return
 
+    # Меню заметок
     if callback.data == "notes_menu":
-        keyboard = InlineKeyboardBuilder()
-        keyboard.add(InlineKeyboardButton(text="📝 Показать заметки", callback_data="notes_show"))
-        keyboard.add(InlineKeyboardButton(text="➕ Добавить заметку", callback_data="notes_add"))
-        keyboard.add(InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main"))
-        keyboard.adjust(1)
-
-        await callback.message.edit_text(
-            "📝 **Записной блокнот**\n\n"
-            "Здесь ты можешь хранить свои заметки.",
-            parse_mode="Markdown",
-            reply_markup=keyboard.as_markup()
-        )
+        await notes_menu_callback(callback)
         return
 
-    if callback.data == "notes_show":
-        await notes_command(callback.message)
-        return
-
-    if callback.data == "notes_add":
-        await callback.message.answer(
-            "📝 **Напиши текст заметки**\n"
-            "Используй команду /note текст",
-            parse_mode="Markdown"
-        )
-        return
-
+    # Меню выбора модели
     if callback.data == "model_menu":
         await model_command(callback.message)
         return
 
+    # Выбор модели с подтверждением
     if callback.data.startswith("model_"):
         model = callback.data.replace("model_", "")
         user_models[user_id] = model
+
         await callback.message.answer(
-            f"✅ **Модель переключена на {model_names.get(model, model)}**",
+            f"✅ **Модель успешно переключена!**\n\n"
+            f"Теперь выбрана: **{model_names.get(model, model)}**\n\n"
+            f"🔹 **GigaChat** - лучший русский язык\n"
+            f"🔹 **DeepSeek** - быстрый, бесплатный\n"
+            f"🔹 **Mistral** - отличная логика\n"
+            f"🔹 **Llama** - самая популярная\n"
+            f"🔹 **Qwen** - сильная в математике\n"
+            f"🔹 **Gemma** - от Google",
             parse_mode="Markdown"
         )
         return
 
+    # Режимы
     if callback.data.startswith("mode_"):
         mode = callback.data.replace("mode_", "")
         db.set_user_mode(user_id, mode, username, first_name, last_name)
         await callback.message.answer(
-            f"✅ **Режим «{mode}» активирован!**",
+            f"✅ **Режим «{mode}» активирован!**\n\n"
+            f"Теперь напиши свой вопрос или отправь голосовое сообщение.",
             parse_mode="Markdown"
         )
         return
 
+    # Админ-меню
+    if is_admin(user_id):
+        if callback.data == "admin_menu":
+            await admin_menu(callback.message)
+            return
+
+        if callback.data == "admin_list":
+            prompts = db.get_all_prompts()
+            text = "📋 **Системные промпты:**\n\n"
+            for mode, prompt in prompts.items():
+                short_prompt = prompt[:100] + "..." if len(prompt) > 100 else prompt
+                text += f"• **{mode}**: {short_prompt}\n\n"
+            await callback.message.edit_text(
+                text,
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(
+                    inline_keyboard=[[InlineKeyboardButton(text="🔙 Назад", callback_data="admin_back")]])
+            )
+            return
+
+        if callback.data == "admin_edit_menu":
+            prompts = db.get_all_prompts()
+            keyboard = InlineKeyboardBuilder()
+            for mode in prompts.keys():
+                keyboard.add(InlineKeyboardButton(text=f"✏️ {mode}", callback_data=f"admin_edit_{mode}"))
+            keyboard.add(InlineKeyboardButton(text="🔙 Назад", callback_data="admin_back"))
+            keyboard.adjust(2)
+            await callback.message.edit_text(
+                "✏️ **Выбери режим для редактирования:**",
+                parse_mode="Markdown",
+                reply_markup=keyboard.as_markup()
+            )
+            return
+
+        if callback.data.startswith("admin_edit_"):
+            mode = callback.data.replace("admin_edit_", "")
+            current_prompt = db.get_prompt(mode)
+            admin_states[mode] = user_id
+            await callback.message.edit_text(
+                f"✏️ **Редактирование режима «{mode}»**\n\n"
+                f"Текущий промпт:\n```\n{current_prompt}\n```\n\n"
+                f"📝 Отправь новый текст промпта в ответ на это сообщение.\n\n"
+                f"🚫 Для отмены отправь /cancel",
+                parse_mode="Markdown"
+            )
+            return
+
+        if callback.data == "admin_add":
+            await callback.message.edit_text(
+                "➕ **Создание нового режима**\n\n"
+                "Отправь название режима (одно слово, латиницей):\n"
+                "Например: `poetry`\n\n"
+                "🚫 Для отмены отправь /cancel",
+                parse_mode="Markdown"
+            )
+            admin_states['awaiting_mode_name'] = user_id
+            return
+
+        if callback.data == "admin_delete":
+            prompts = db.get_all_prompts()
+            keyboard = InlineKeyboardBuilder()
+            for mode in prompts.keys():
+                keyboard.add(InlineKeyboardButton(text=f"❌ {mode}", callback_data=f"admin_del_{mode}"))
+            keyboard.add(InlineKeyboardButton(text="🔙 Назад", callback_data="admin_back"))
+            keyboard.adjust(2)
+            await callback.message.edit_text(
+                "❌ **Выбери режим для удаления:**",
+                parse_mode="Markdown",
+                reply_markup=keyboard.as_markup()
+            )
+            return
+
+        if callback.data.startswith("admin_del_"):
+            mode = callback.data.replace("admin_del_", "")
+            keyboard = InlineKeyboardBuilder()
+            keyboard.add(InlineKeyboardButton(text="✅ Да, удалить", callback_data=f"admin_confirm_del_{mode}"))
+            keyboard.add(InlineKeyboardButton(text="❌ Нет, отмена", callback_data="admin_back"))
+            await callback.message.edit_text(
+                f"❓ **Точно удалить режим «{mode}»?**",
+                parse_mode="Markdown",
+                reply_markup=keyboard.as_markup()
+            )
+            return
+
+        if callback.data.startswith("admin_confirm_del_"):
+            mode = callback.data.replace("admin_confirm_del_", "")
+            if db.delete_prompt(mode):
+                await callback.message.edit_text(
+                    f"✅ Режим «{mode}» удалён.",
+                    parse_mode="Markdown",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                        InlineKeyboardButton(text="🔙 Назад", callback_data="admin_back")
+                    ]])
+                )
+            else:
+                await callback.message.edit_text(f"❌ Ошибка при удалении режима «{mode}».")
+            return
+
+        if callback.data == "admin_back":
+            await admin_menu(callback.message)
+            return
+
+    # Обычные кнопки
     if callback.data == "help":
         await help_command(callback.message)
-        return
-
-    if callback.data == "stats":
+    elif callback.data == "stats":
         stats = db.get_user_stats(user_id)
         await callback.message.answer(
             f"📊 **Твоя статистика:**\n\n"
@@ -564,30 +673,177 @@ async def callback_handler(callback: types.CallbackQuery):
             f"Всего пользователей: {db.get_all_users_count()}",
             parse_mode="Markdown"
         )
+
+
+# ========== ОБРАБОТЧИК ГОЛОСОВЫХ СООБЩЕНИЙ ==========
+@dp.message(lambda message: message.voice is not None)
+async def voice_message_handler(message: types.Message):
+    """Обработчик голосовых сообщений"""
+
+    if not VOICE_ENABLED:
+        await message.answer("❌ Голосовой режим временно недоступен. Отправь текст.")
         return
 
-    if is_admin(user_id) and callback.data == "admin_menu":
-        prompts = db.get_all_prompts()
-        text = "📋 **Системные промпты:**\n\n"
-        for mode, prompt in prompts.items():
-            short_prompt = prompt[:50] + "..." if len(prompt) > 50 else prompt
-            text += f"• **{mode}**: {short_prompt}\n\n"
-        await callback.message.answer(text, parse_mode="Markdown")
-        return
+    user_id = message.from_user.id
+    logger.info(f"🎤 Получено голосовое сообщение от пользователя {user_id}")
+
+    # Проверяем режим пользователя
+    mode = db.get_user_mode(user_id)
+    system_prompt = db.get_prompt(mode) or "Ты полезный ассистент."
+
+    # Показываем статус
+    status_msg = await message.answer("🎤 Распознаю речь...")
+
+    temp_files = []
+
+    try:
+        # Скачиваем голосовое сообщение с повторными попытками
+        logger.info("📥 Скачиваю голосовой файл...")
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                file = await message.bot.get_file(message.voice.file_id)
+
+                with tempfile.NamedTemporaryFile(suffix='.ogg', delete=False) as tmp_file:
+                    await message.bot.download_file(file.file_path, tmp_file.name)
+                    ogg_path = tmp_file.name
+                    temp_files.append(ogg_path)
+                    logger.info(f"✅ Файл скачан: {ogg_path}")
+                    break
+            except Exception as e:
+                logger.warning(f"⚠️ Попытка {attempt + 1}/{max_retries} не удалась: {e}")
+                if attempt == max_retries - 1:
+                    raise
+                await asyncio.sleep(2)
+
+        # Преобразуем речь в текст
+        await status_msg.edit_text("🔄 Преобразую речь в текст...")
+        logger.info("🎤 Запускаю распознавание речи...")
+
+        recognized_text = stt.audio_to_text(ogg_path)
+        logger.info(f"📝 Распознано: {recognized_text}")
+
+        if recognized_text.startswith("❌") or recognized_text.startswith("🔇"):
+            await status_msg.edit_text(recognized_text)
+            return
+
+        # Показываем распознанный текст
+        await status_msg.edit_text(
+            f"📝 **Распознано:**\n{recognized_text}\n\n"
+            f"🤔 Думаю...",
+            parse_mode="Markdown"
+        )
+
+        # Сохраняем сообщение пользователя
+        db.save_message(user_id, 'user', f"[голосовое] {recognized_text}", mode)
+
+        # Получаем ответ от выбранной AI-модели
+        logger.info("🤖 Отправляю запрос в AI-модель...")
+
+        user_model = user_models.get(user_id, "gigachat")
+
+        if user_model == "gigachat":
+            response = giga.ask(recognized_text, system_prompt)
+        elif user_model == "deepseek":
+            response = deepseek.ask(recognized_text, system_prompt)
+        elif user_model in ["mistral", "llama", "qwen", "gemma"]:
+            response = openrouter.ask(recognized_text, model=user_model, system_prompt=system_prompt)
+        else:
+            response = giga.ask(recognized_text, system_prompt)
+
+        logger.info(f"✅ Ответ получен, длина: {len(response)} символов")
+
+        # Сохраняем ответ бота
+        message_id = db.save_message(user_id, 'assistant', response, mode)
+
+        # Создаём голосовой ответ
+        await status_msg.edit_text("🔊 Создаю голосовой ответ...")
+        logger.info("🔊 Генерирую голос через TTS...")
+
+        # Создаём временный файл для голосового ответа
+        with tempfile.NamedTemporaryFile(suffix='.ogg', delete=False) as tmp_file:
+            output_path = tmp_file.name
+            temp_files.append(output_path)
+
+        # Генерируем голос
+        voice_path = tts.text_to_ogg(response, output_path)
+        logger.info(f"🔊 Голос сгенерирован: {voice_path}")
+
+        if voice_path and Path(voice_path).exists():
+            # Отправляем голосовое сообщение
+            logger.info("📤 Отправляю голосовое сообщение...")
+
+            from aiogram.types import FSInputFile
+            voice_file = FSInputFile(voice_path)
+
+            await message.answer_voice(
+                voice=voice_file,
+                caption="_Голосовой ответ сгенерирован_",
+                parse_mode="Markdown"
+            )
+            logger.info("✅ Голосовое сообщение отправлено")
+
+            # Кнопки оценки
+            keyboard = InlineKeyboardBuilder()
+            keyboard.add(InlineKeyboardButton(text="👍", callback_data=f"like_{message_id}"))
+            keyboard.add(InlineKeyboardButton(text="👎", callback_data=f"dislike_{message_id}"))
+
+            await message.answer(
+                response + "\n\n_Оцени ответ, пожалуйста:_",
+                parse_mode="Markdown",
+                reply_markup=keyboard.as_markup()
+            )
+
+            # Удаляем статусное сообщение
+            await status_msg.delete()
+        else:
+            logger.error("❌ Не удалось сгенерировать голос")
+            await status_msg.edit_text(
+                response + "\n\n_(не удалось создать голос, ответ текстом)_",
+                parse_mode="Markdown"
+            )
+
+    except asyncio.TimeoutError:
+        logger.error("❌ Таймаут при скачивании голосового файла")
+        await status_msg.edit_text(
+            "❌ Превышено время ожидания при скачивании голосового сообщения.\n"
+            "Попробуй отправить более короткое сообщение или проверь интернет."
+        )
+    except Exception as e:
+        logger.error(f"❌ Ошибка обработки голоса: {e}", exc_info=True)
+        await status_msg.edit_text(
+            f"❌ Произошла ошибка при обработке голосового сообщения.\n"
+            f"Детали: {str(e)}\n"
+            f"Попробуй отправить текст."
+        )
+
+    finally:
+        # Удаляем временные файлы
+        for file_path in temp_files:
+            try:
+                os.unlink(file_path)
+                logger.info(f"🗑️ Удалён временный файл: {file_path}")
+            except:
+                pass
 
 
-# ========== ОСНОВНОЙ ОБРАБОТЧИК ТЕКСТА ==========
+# ========== ОБРАБОТЧИК ТЕКСТОВЫХ СООБЩЕНИЙ ==========
 @dp.message()
 async def handle_message(message: types.Message):
     user_id = message.from_user.id
 
+    # Админские состояния
     if is_admin(user_id):
         if 'awaiting_mode_name' in admin_states:
             mode_name = message.text.strip().lower().replace(' ', '_')
             admin_states['new_mode_name'] = mode_name
             admin_states.pop('awaiting_mode_name')
             admin_states['awaiting_mode_prompt'] = user_id
-            await message.answer(f"✅ Название: **{mode_name}**\n\nТеперь отправь текст промпта:", parse_mode="Markdown")
+            await message.answer(
+                f"✅ Название: **{mode_name}**\n\n"
+                f"Теперь отправь текст промпта:",
+                parse_mode="Markdown"
+            )
             return
 
         if 'awaiting_mode_prompt' in admin_states:
@@ -609,24 +865,24 @@ async def handle_message(message: types.Message):
                 admin_states.pop(mode)
                 return
 
+    # Обычный текстовый режим
     mode = db.get_user_mode(user_id)
     system_prompt = db.get_prompt(mode) or "Ты полезный ассистент."
     db.save_message(user_id, 'user', message.text, mode)
 
     await message.bot.send_chat_action(message.chat.id, action="typing")
+
+    # Получаем ответ от выбранной AI-модели
     user_model = user_models.get(user_id, "gigachat")
 
-    try:
-        if user_model == "gigachat":
-            response = giga.ask(message.text, system_prompt)
-        elif user_model == "deepseek":
-            response = deepseek.ask(message.text, system_prompt)
-        elif user_model in ["mistral", "llama", "qwen", "gemma"]:
-            response = openrouter.ask(message.text, model=user_model, system_prompt=system_prompt)
-        else:
-            response = giga.ask(message.text, system_prompt)
-    except Exception as e:
-        response = f"❌ Ошибка AI: {str(e)}"
+    if user_model == "gigachat":
+        response = giga.ask(message.text, system_prompt)
+    elif user_model == "deepseek":
+        response = deepseek.ask(message.text, system_prompt)
+    elif user_model in ["mistral", "llama", "qwen", "gemma"]:
+        response = openrouter.ask(message.text, model=user_model, system_prompt=system_prompt)
+    else:
+        response = giga.ask(message.text, system_prompt)
 
     message_id = db.save_message(user_id, 'assistant', response, mode)
 
@@ -643,8 +899,9 @@ async def handle_message(message: types.Message):
     )
 
 
-# ========== ОБРАБОТЧИК ВЕБХУКА ==========
+# ========== ОБРАБОТЧИК ВЕБХУКА ДЛЯ RENDER ==========
 async def handle_webhook(request: web.Request) -> web.Response:
+    """Обрабатывает входящие обновления от Telegram через вебхук"""
     try:
         update_data = await request.json()
         update = types.Update(**update_data)
@@ -655,91 +912,76 @@ async def handle_webhook(request: web.Request) -> web.Response:
         return web.Response(status=500)
 
 
-# ========== HEALTHCHECK ==========
 async def healthcheck(request: web.Request) -> web.Response:
+    """Эндпоинт для проверки здоровья приложения"""
     return web.Response(
         text=f"Bot is running! Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
         status=200
     )
 
 
-# ========== ФУНКЦИИ ЗАПУСКА И ОСТАНОВКИ ==========
 async def on_startup():
-    if RAILWAY_PUBLIC_DOMAIN == 'localhost':
-        logger.error("❌ НЕВОЗМОЖНО УСТАНОВИТЬ ВЕБХУК: домен не определён!")
-        logger.error("❌ Добавьте переменную RAILWAY_PUBLIC_DOMAIN в Railway")
-        return
+    """Действия при запуске на Render"""
+    if IS_RENDER and PUBLIC_DOMAIN != 'localhost':
+        webhook_url = f"https://{PUBLIC_DOMAIN}/webhook"
 
-    webhook_url = f"https://{RAILWAY_PUBLIC_DOMAIN}/webhook"
-
-    try:
-        # Удаляем старый вебхук
+        # Удаляем старый вебхук и устанавливаем новый
         await bot.delete_webhook(drop_pending_updates=True)
-
-        # Устанавливаем новый
-        result = await bot.set_webhook(
+        await bot.set_webhook(
             webhook_url,
             allowed_updates=["message", "callback_query"],
             drop_pending_updates=True
         )
-
-        if result:
-            logger.info(f"✅ Вебхук установлен на {webhook_url}")
-
-            # Проверяем вебхук
-            webhook_info = await bot.get_webhook_info()
-            logger.info(f"📊 Информация о вебхуке: {webhook_info.url}")
-        else:
-            logger.error("❌ Не удалось установить вебхук")
-
-    except Exception as e:
-        logger.error(f"❌ Ошибка при установке вебхука: {e}")
-
-    bot_info = await bot.get_me()
-    logger.info(f"🚀 Бот @{bot_info.username} запущен!")
-    logger.info(f"🎤 Голосовой режим: {'ВКЛЮЧЕН' if VOICE_ENABLED else 'ВЫКЛЮЧЕН'}")
+        logger.info(f"✅ Вебхук установлен на {webhook_url}")
+    else:
+        logger.info("💻 Локальный режим: вебхук не устанавливается")
 
 
 async def on_shutdown():
-    await bot.delete_webhook()
+    """Действия при остановке"""
+    if IS_RENDER:
+        await bot.delete_webhook()
     await bot.session.close()
-    logger.info("✅ Бот остановлен, вебхук удалён")
-
-
-# ========== ОСНОВНАЯ ФУНКЦИЯ ==========
-async def main():
-    dp.startup.register(on_startup)
-    dp.shutdown.register(on_shutdown)
-
-    app = web.Application()
-    app.router.add_post('/webhook', handle_webhook)
-    app.router.add_get('/', healthcheck)
-    app.router.add_get('/health', healthcheck)
-
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', PORT)
-    await site.start()
-
-    logger.info(f"🌐 Веб-сервер запущен на порту {PORT}")
-
-    if RAILWAY_PUBLIC_DOMAIN == 'localhost':
-        logger.warning("⚠️ Домен не определён! Вебхуки работать не будут!")
-        logger.warning("⚠️ Добавьте RAILWAY_PUBLIC_DOMAIN в переменные окружения")
-    else:
-        logger.info(f"🔗 URL вебхука: https://{RAILWAY_PUBLIC_DOMAIN}/webhook")
-        logger.info("🤖 Бот ожидает обновления через вебхуки...")
-
-    try:
-        await asyncio.Event().wait()
-    except KeyboardInterrupt:
-        logger.info("🛑 Получен сигнал остановки")
-    finally:
-        await on_shutdown()
-        await runner.cleanup()
+    logger.info("✅ Бот остановлен")
 
 
 # ========== ЗАПУСК ==========
+async def main():
+    # Регистрируем функции запуска и остановки
+    dp.startup.register(on_startup)
+    dp.shutdown.register(on_shutdown)
+
+    if IS_RENDER:
+        # Запуск на Render с вебхуками
+        app = web.Application()
+        app.router.add_post('/webhook', handle_webhook)
+        app.router.add_get('/', healthcheck)
+        app.router.add_get('/health', healthcheck)
+
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, '0.0.0.0', PORT)
+        await site.start()
+
+        logger.info(f"🌐 Веб-сервер запущен на порту {PORT}")
+        logger.info(f"🔗 URL вебхука: https://{PUBLIC_DOMAIN}/webhook")
+        logger.info("🤖 Бот ожидает обновления через вебхуки...")
+
+        # Бесконечное ожидание
+        try:
+            await asyncio.Event().wait()
+        except KeyboardInterrupt:
+            logger.info("🛑 Получен сигнал остановки")
+        finally:
+            await on_shutdown()
+            await runner.cleanup()
+    else:
+        # Локальный запуск с polling
+        logger.info("🚀 Бот запущен в локальном режиме!")
+        logger.info(f"🎤 Голосовой режим: {'ВКЛЮЧЕН' if VOICE_ENABLED else 'ВЫКЛЮЧЕН'}")
+        await dp.start_polling(bot)
+
+
 if __name__ == "__main__":
     try:
         asyncio.run(main())

@@ -4,4 +4,3 @@ SpeechRecognition==3.10.0
 gtts==2.5.1
 openai==1.68.2
 aiohttp==3.13.3
-aiogram>=3.0.0
