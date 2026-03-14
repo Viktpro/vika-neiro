@@ -6,6 +6,7 @@
   "deploy": {
     "startCommand": "python aiogram_bot.py",
     "healthcheckPath": "/",
-    "restartPolicyType": "ON_FAILURE"
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 10
   }
 }

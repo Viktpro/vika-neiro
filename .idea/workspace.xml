@@ -5,7 +5,7 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="386be4bd-b435-4721-bf49-ff504638e216" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/voice/stt.py" beforeDir="false" afterPath="$PROJECT_DIR$/voice/stt.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/aiogram_bot.py" beforeDir="false" afterPath="$PROJECT_DIR$/aiogram_bot.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

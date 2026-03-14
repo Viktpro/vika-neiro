@@ -20,20 +20,35 @@ from aiogram.client.telegram import TelegramAPIServer
 from database import Database
 from ai_models import DeepSeekModel, OpenRouterModel, GigaChatModel
 
-# ========== ГОЛОСОВЫЕ МОДУЛИ ==========
+# ========== ВЕБ-СЕРВЕР ДЛЯ RAILWAY ==========
 try:
-    from voice.stt import STT
-    from voice.tts import TTS
+    from railway_web import start_web_server_thread
 
-    VOICE_ENABLED = True
-except ImportError as e:
-    print(f"⚠️ Голосовые модули не загружены: {e}")
+    # Запускаем веб-сервер в фоне
+    start_web_server_thread()
+    print("✅ Веб-сервер для Railway запущен")
+except ImportError:
+    print("⚠️ Веб-сервер не подключен (локальный режим)")
+
+# ========== ГОЛОСОВЫЕ МОДУЛИ ==========
+# На Railway отключаем голос (будем добавлять позже)
+if os.environ.get('RAILWAY_ENVIRONMENT'):
     VOICE_ENABLED = False
+    print("⚠️ Голосовой режим отключен для Railway")
+else:
+    try:
+        from voice.stt import STT
+        from voice.tts import TTS
+
+        VOICE_ENABLED = True
+    except ImportError as e:
+        print(f"⚠️ Голосовые модули не загружены: {e}")
+        VOICE_ENABLED = False
 
 # ========== НАСТРОЙКИ ==========
-TELEGRAM_TOKEN = "8249255843:AAE0fPLcPpmJqyWGK70xJ06mOacatNVEUgc"
-CLIENT_ID = "019c9dd5-08ad-714c-8358-5945e8c15fee"
-CLIENT_SECRET = "90a0e997-4015-458f-907a-d59f5d9e68a7"
+TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN', "8249255843:AAE0fPLcPpmJqyWGK70xJ06mOacatNVEUgc")
+CLIENT_ID = os.environ.get('CLIENT_ID', "019c9dd5-08ad-714c-8358-5945e8c15fee")
+CLIENT_SECRET = os.environ.get('CLIENT_SECRET', "90a0e997-4015-458f-907a-d59f5d9e68a7")
 ADMIN_IDS = [1467484237, 8249255843]  # Оба твоих ID
 
 # ========== ИНИЦИАЛИЗАЦИЯ ==========
@@ -88,7 +103,7 @@ model_descriptions = {
     "gemma": "🇺🇸 **Gemma**\n• От Google\n• 9B параметров\n• Новая технология\n• Быстрая"
 }
 
-# Инициализация голосовых модулей
+# Инициализация голосовых модулей (только если не Railway)
 if VOICE_ENABLED:
     try:
         stt = STT()
@@ -142,13 +157,12 @@ async def start(message: types.Message):
     keyboard.add(InlineKeyboardButton(text="❓ Помощь", callback_data="help"))
     keyboard.add(InlineKeyboardButton(text="📊 Статистика", callback_data="stats"))
     keyboard.add(InlineKeyboardButton(text="🤖 Выбрать модель", callback_data="model_menu"))
-    keyboard.add(InlineKeyboardButton(text="📝 Заметки", callback_data="notes_menu"))
 
     if is_admin(user_id):
         keyboard.add(InlineKeyboardButton(text="🛠️ Админ", callback_data="admin_menu"))
-        keyboard.adjust(2, 2, 2, 2, 1, 1)
-    else:
         keyboard.adjust(2, 2, 2, 2, 1)
+    else:
+        keyboard.adjust(2, 2, 2, 2)
 
     voice_status = "🎤 Голосовой ввод активен" if VOICE_ENABLED else "⚠️ Голосовой режим недоступен"
 
@@ -165,135 +179,6 @@ async def start(message: types.Message):
         reply_markup=keyboard.as_markup()
     )
 
-
-# ========== ЗАПИСНОЙ БЛОКНОТ ==========
-
-@dp.message(Command("note"))
-async def note_command(message: types.Message):
-    """Добавить заметку"""
-    text = message.text.replace("/note", "", 1).strip()
-    if not text:
-        await message.answer(
-            "📝 **Как пользоваться заметками:**\n\n"
-            "/note текст - сохранить заметку\n"
-            "/notes - показать все заметки\n"
-            "/delnote номер - удалить заметку\n\n"
-            "Пример: /note Купить молоко",
-            parse_mode="Markdown"
-        )
-        return
-
-    user_id = message.from_user.id
-    note_id = db.save_note(user_id, text)
-
-    await message.answer(
-        f"✅ **Заметка сохранена!**\n\n"
-        f"📝 `{text}`\n\n"
-        f"📌 Номер заметки: {note_id}\n"
-        f"Используй /notes чтобы увидеть все",
-        parse_mode="Markdown"
-    )
-
-
-@dp.message(Command("notes"))
-async def notes_command(message: types.Message):
-    """Показать все заметки"""
-    user_id = message.from_user.id
-    notes = db.get_notes(user_id)
-
-    if not notes:
-        await message.answer(
-            "📭 **У тебя пока нет заметок**\n\n"
-            "Чтобы создать заметку, напиши:\n"
-            "/note твой текст",
-            parse_mode="Markdown"
-        )
-        return
-
-    text = "📝 **Твои заметки:**\n\n"
-    for i, note in enumerate(notes[:20], 1):
-        created = note['created_at'][:16] if note['created_at'] else ""
-        text += f"{i}. `{note['note']}`\n"
-        text += f"   🆔 {note['id']} | {created}\n\n"
-
-    text += "\n_Удалить заметку: /delnote номер_"
-
-    # Разбиваем, если слишком длинное сообщение
-    if len(text) > 4000:
-        for chunk in [text[i:i + 4000] for i in range(0, len(text), 4000)]:
-            await message.answer(chunk, parse_mode="Markdown")
-    else:
-        await message.answer(text, parse_mode="Markdown")
-
-
-@dp.message(Command("delnote"))
-async def delnote_command(message: types.Message):
-    """Удалить заметку по ID"""
-    args = message.text.split()
-    if len(args) < 2:
-        await message.answer(
-            "❌ **Укажи номер заметки**\n\n"
-            "Пример: /delnote 5\n"
-            "Номер можно узнать через /notes",
-            parse_mode="Markdown"
-        )
-        return
-
-    try:
-        note_id = int(args[1])
-        user_id = message.from_user.id
-
-        # Проверяем, что заметка принадлежит пользователю
-        if db.delete_note(note_id, user_id):
-            await message.answer(f"✅ **Заметка {note_id} удалена**", parse_mode="Markdown")
-        else:
-            await message.answer(
-                f"❌ **Заметка {note_id} не найдена**\n\n"
-                f"Убедись, что номер правильный",
-                parse_mode="Markdown"
-            )
-    except ValueError:
-        await message.answer("❌ **Номер должен быть числом**", parse_mode="Markdown")
-
-
-@dp.callback_query(lambda c: c.data == "notes_menu")
-async def notes_menu_callback(callback: types.CallbackQuery):
-    """Меню заметок"""
-    keyboard = InlineKeyboardBuilder()
-    keyboard.add(InlineKeyboardButton(text="📝 Показать заметки", callback_data="notes_show"))
-    keyboard.add(InlineKeyboardButton(text="➕ Добавить заметку", callback_data="notes_add"))
-    keyboard.add(InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main"))
-    keyboard.adjust(1)
-
-    await callback.message.edit_text(
-        "📝 **Записной блокнот**\n\n"
-        "Здесь ты можешь хранить свои заметки.\n"
-        "Они сохраняются в базе данных и не пропадают после перезапуска бота.",
-        parse_mode="Markdown",
-        reply_markup=keyboard.as_markup()
-    )
-
-
-@dp.callback_query(lambda c: c.data == "notes_show")
-async def notes_show_callback(callback: types.CallbackQuery):
-    """Показать заметки через кнопку"""
-    await callback.answer()
-    await notes_command(callback.message)
-
-
-@dp.callback_query(lambda c: c.data == "notes_add")
-async def notes_add_callback(callback: types.CallbackQuery):
-    """Добавить заметку через кнопку"""
-    await callback.answer()
-    await callback.message.answer(
-        "📝 **Напиши текст заметки**\n"
-        "Например: Купить молоко и хлеб\n\n"
-        "Используй команду /note текст",
-        parse_mode="Markdown"
-    )
-
-
-# ========== ОСТАЛЬНЫЕ ОБРАБОТЧИКИ (админка, модель, статистика и т.д.) ==========
 
 @dp.message(Command("admin"))
 async def admin_menu(message: types.Message):
