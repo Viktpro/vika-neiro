@@ -1,0 +1,10 @@
+services:
+  - type: worker
+    name: vika-neiro-bot
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python aiogram_bot.py
+    plan: free
+    envVars:
+      - key: TELEGRAM_TOKEN
+        value: 8249255843:AAE0fPLcPpmJqyWGK70xJ06mOacatNVEUgc
