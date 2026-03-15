@@ -85,18 +85,18 @@ model_names = {
     "gigachat": "🇷🇺 GigaChat",
     "deepseek": "🇨🇳 DeepSeek",
     "mistral": "🇪🇺 Mistral",
-    "llama": "🦙 Llama (может смотреть фото)",
+    "llama": "🦙 Llama",
     "qwen": "🇨🇳 Qwen",
     "gemma": "🇺🇸 Gemma"
 }
 
 model_descriptions = {
-    "gigachat": "🇷🇺 <b>GigaChat</b>\n• От Сбера\n• Лучший русский язык\n• Бесплатно",
-    "deepseek": "🇨🇳 <b>DeepSeek</b>\n• 1 млн токенов бесплатно\n• Очень быстрый\n• Отличный код",
-    "mistral": "🇪🇺 <b>Mistral</b>\n• Европейская модель\n• Открытый код\n• Хороша для логики",
-    "llama": "🦙 <b>Llama</b>\n• От Meta\n• Самая популярная\n• Умеет смотреть фото!\n• 8B параметров",
-    "qwen": "🇨🇳 <b>Qwen</b>\n• От Alibaba\n• 7B параметров\n• Сильная в математике",
-    "gemma": "🇺🇸 <b>Gemma</b>\n• От Google\n• 9B параметров\n• Новая технология"
+    "gigachat": "🇷🇺 **GigaChat**\n• От Сбера\n• Лучший русский язык\n• Бесплатно",
+    "deepseek": "🇨🇳 **DeepSeek**\n• 1 млн токенов бесплатно\n• Очень быстрый\n• Отличный код",
+    "mistral": "🇪🇺 **Mistral**\n• Европейская модель\n• Открытый код\n• Хороша для логики",
+    "llama": "🦙 **Llama**\n• От Meta\n• Самая популярная\n• 8B параметров",
+    "qwen": "🇨🇳 **Qwen**\n• От Alibaba\n• 7B параметров\n• Сильная в математике",
+    "gemma": "🇺🇸 **Gemma**\n• От Google\n• 9B параметров\n• Новая технология"
 }
 
 FACTS = [
@@ -150,8 +150,6 @@ async def start(message: types.Message):
         f"👋 <b>Привет, {first_name}!</b>\n\n"
         f"🧠 <b>Нейробот Вики</b>\n"
         f"🤖 <b>Модель:</b> {model_display}\n\n"
-        f"📸 <b>Новая функция:</b> отправь фото - я расскажу, что на нём!\n"
-        f"✨ <i>Рекомендую выбрать модель Llama для лучшего распознавания</i>\n\n"
         f"👇 <b>Выбери режим:</b>",
         parse_mode="HTML",
         reply_markup=keyboard.as_markup()
@@ -172,9 +170,9 @@ async def model_command(message: types.Message):
     current_model = user_models.get(message.from_user.id, "gigachat")
     current_display = model_names.get(current_model, current_model)
 
-    text = f"🤖 <b>Выбери AI-модель:</b>\n\n"
-    text += f"🔹 <b>Сейчас выбрана:</b> {current_display}\n\n"
-    text += "<b>Что умеют модели:</b>\n\n"
+    text = f"🤖 **Выбери AI-модель:**\n\n"
+    text += f"🔹 **Сейчас выбрана:** {current_display}\n\n"
+    text += "**Что умеют модели:**\n\n"
 
     for model_key, desc in model_descriptions.items():
         if model_key == current_model:
@@ -182,33 +180,28 @@ async def model_command(message: types.Message):
         else:
             text += f"• {desc}\n\n"
 
-    text += "\n📸 <i>Для распознавания фото лучше всего подходит Llama</i>"
-
     await message.answer(text, parse_mode="HTML", reply_markup=keyboard.as_markup())
 
 
 @dp.message(Command("help"))
 async def help_command(message: types.Message):
     await message.answer(
-        "🤖 <b>Доступные команды:</b>\n\n"
-        "📌 <b>Основные:</b>\n"
+        "🤖 **Доступные команды:**\n\n"
+        "📌 **Основные:**\n"
         "/start - Главное меню\n"
         "/help - Эта справка\n"
         "/stats - Твоя статистика\n"
         "/clear - Сбросить диалог\n\n"
-        "📝 <b>Заметки:</b>\n"
+        "📝 **Заметки:**\n"
         "/note текст - сохранить заметку\n"
         "/notes - показать заметки\n"
         "/delnote номер - удалить заметку\n\n"
-        "🤖 <b>AI-модели:</b>\n"
+        "🤖 **AI-модели:**\n"
         "/model - Выбрать нейросеть\n\n"
-        "🔧 <b>Полезные:</b>\n"
+        "🔧 **Полезные:**\n"
         "/time - Текущее время\n"
         "/random - Случайное число\n"
-        "/fact - Интересный факт\n\n"
-        "📸 <b>Новая функция:</b>\n"
-        "Просто отправь фото - я расскажу, что на нём изображено!\n"
-        "<i>Для лучшего результата выбери модель Llama</i>",
+        "/fact - Интересный факт",
         parse_mode="HTML"
     )
 
@@ -217,8 +210,8 @@ async def help_command(message: types.Message):
 async def time_command(message: types.Message):
     now = datetime.now()
     await message.answer(
-        f"📅 <b>Сегодня:</b> {now.strftime('%d.%m.%Y')}\n"
-        f"⏰ <b>Точное время:</b> {now.strftime('%H:%M:%S')}",
+        f"📅 **Сегодня:** {now.strftime('%d.%m.%Y')}\n"
+        f"⏰ **Точное время:** {now.strftime('%H:%M:%S')}",
         parse_mode="HTML"
     )
 
@@ -231,25 +224,25 @@ async def random_command(message: types.Message):
             min_num = int(args[1])
             max_num = int(args[2])
             number = random.randint(min_num, max_num)
-            await message.answer(f"🎲 <b>Случайное число от {min_num} до {max_num}:</b> {number}", parse_mode="HTML")
+            await message.answer(f"🎲 **Случайное число от {min_num} до {max_num}:** {number}", parse_mode="HTML")
         except:
             await message.answer("❌ Используй: /random мин макс", parse_mode="HTML")
     else:
         number = random.randint(1, 100)
-        await message.answer(f"🎲 <b>Случайное число:</b> {number}", parse_mode="HTML")
+        await message.answer(f"🎲 **Случайное число:** {number}", parse_mode="HTML")
 
 
 @dp.message(Command("fact"))
 async def fact_command(message: types.Message):
     fact = random.choice(FACTS)
-    await message.answer(f"🔮 <b>Интересный факт:</b>\n\n{fact}", parse_mode="HTML")
+    await message.answer(f"🔮 **Интересный факт:**\n\n{fact}", parse_mode="HTML")
 
 
 @dp.message(Command("stats"))
 async def stats_command(message: types.Message):
     stats = db.get_user_stats(message.from_user.id)
     await message.answer(
-        f"📊 <b>Твоя статистика:</b>\n\n"
+        f"📊 **Твоя статистика:**\n\n"
         f"• Сообщений: {stats['messages']}\n"
         f"• 👍 Лайков: {stats['likes']}\n"
         f"• 👎 Дизлайков: {stats['dislikes']}",
@@ -285,7 +278,7 @@ async def note_command(message: types.Message):
     text = message.text.replace("/note", "", 1).strip()
     if not text:
         await message.answer(
-            "📝 <b>Как пользоваться заметками:</b>\n\n"
+            "📝 **Как пользоваться заметками:**\n\n"
             "/note текст - сохранить заметку\n"
             "/notes - показать заметки\n"
             "/delnote номер - удалить заметку",
@@ -297,7 +290,7 @@ async def note_command(message: types.Message):
     note_id = db.save_note(user_id, text)
 
     await message.answer(
-        f"✅ <b>Заметка сохранена!</b>\n\n"
+        f"✅ **Заметка сохранена!**\n\n"
         f"📝 {text}\n\n"
         f"📌 Номер: {note_id}",
         parse_mode="HTML"
@@ -311,13 +304,13 @@ async def notes_command(message: types.Message):
 
     if not notes:
         await message.answer(
-            "📭 <b>У тебя пока нет заметок</b>\n\n"
+            "📭 **У тебя пока нет заметок**\n\n"
             "/note текст - создать заметку",
             parse_mode="HTML"
         )
         return
 
-    text = "📝 <b>Твои заметки:</b>\n\n"
+    text = "📝 **Твои заметки:**\n\n"
     for note in notes[:10]:
         created = note['created_at'][:16] if note['created_at'] else ""
         text += f"📌 <code>{note['note']}</code>\n"
@@ -330,7 +323,7 @@ async def notes_command(message: types.Message):
 async def delnote_command(message: types.Message):
     args = message.text.split()
     if len(args) < 2:
-        await message.answer("❌ <b>Укажи номер заметки</b>\n\nПример: /delnote 5", parse_mode="HTML")
+        await message.answer("❌ **Укажи номер заметки**\n\nПример: /delnote 5", parse_mode="HTML")
         return
 
     try:
@@ -338,94 +331,11 @@ async def delnote_command(message: types.Message):
         user_id = message.from_user.id
 
         if db.delete_note(note_id, user_id):
-            await message.answer(f"✅ <b>Заметка {note_id} удалена</b>", parse_mode="HTML")
+            await message.answer(f"✅ **Заметка {note_id} удалена**", parse_mode="HTML")
         else:
-            await message.answer(f"❌ <b>Заметка {note_id} не найдена</b>", parse_mode="HTML")
+            await message.answer(f"❌ **Заметка {note_id} не найдена**", parse_mode="HTML")
     except ValueError:
-        await message.answer("❌ <b>Номер должен быть числом</b>", parse_mode="HTML")
-
-
-# ========== ОБРАБОТЧИК ФОТОГРАФИЙ (ЧЕРЕЗ OPENROUTER) ==========
-@dp.message(lambda message: message.photo is not None)
-async def handle_photo(message: types.Message):
-    """Определяет, что изображено на фото через OpenRouter"""
-
-    user_id = message.from_user.id
-    logger.info(f"📸 Получено фото от пользователя {user_id}")
-
-    status_msg = await message.answer("🔍 Анализирую изображение...")
-
-    temp_files = []
-
-    try:
-        # Получаем фото (самое большое качество)
-        photo = message.photo[-1]
-        file = await message.bot.get_file(photo.file_id)
-
-        # Скачиваем
-        with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp_file:
-            file_path = tmp_file.name
-            await message.bot.download_file(file.file_path, file_path)
-            temp_files.append(file_path)
-            logger.info(f"✅ Фото скачано: {file_path}")
-
-        await status_msg.edit_text("🔄 Отправляю на распознавание через OpenRouter...")
-
-        # Получаем режим пользователя
-        mode = db.get_user_mode(user_id)
-        system_prompt = db.get_prompt(mode) or "Ты полезный ассистент."
-
-        # Определяем, какая модель выбрана
-        user_model = user_models.get(user_id, "gigachat")
-
-        # Формируем промпт для анализа
-        prompt = "Опиши подробно, что изображено на этой фотографии. Напиши на русском языке. Определи объекты, людей, животных, достопримечательности, еду или что там есть. Будь конкретным и детальным."
-
-        # Для распознавания фото используем OpenRouter
-        # Если выбрана Llama - используем её, иначе используем Llama по умолчанию
-        vision_model = "llama"  # По умолчанию
-        if user_model in ["llama", "mistral"]:
-            vision_model = user_model
-
-        response = openrouter.ask_with_image(
-            prompt=prompt,
-            image_path=file_path,
-            model=vision_model
-        )
-
-        logger.info(f"✅ Ответ получен")
-
-        # Сохраняем в историю
-        db.save_message(user_id, 'user', f"[фото] Запрос на анализ изображения", mode)
-        message_id = db.save_message(user_id, 'assistant', response, mode)
-
-        # Кнопки оценки
-        keyboard = InlineKeyboardBuilder()
-        keyboard.add(InlineKeyboardButton(text="👍", callback_data=f"like_{message_id}"))
-        keyboard.add(InlineKeyboardButton(text="👎", callback_data=f"dislike_{message_id}"))
-
-        await status_msg.delete()
-        await message.answer(
-            f"📸 <b>Что на фото:</b>\n\n{response}",
-            parse_mode="HTML",
-            reply_markup=keyboard.as_markup()
-        )
-
-    except Exception as e:
-        logger.error(f"❌ Ошибка обработки фото: {e}", exc_info=True)
-        await status_msg.edit_text(
-            f"❌ Не удалось проанализировать фото.\n"
-            f"Попробуй другое изображение или отправь текст."
-        )
-
-    finally:
-        # Удаляем временные файлы
-        for file_path in temp_files:
-            try:
-                os.unlink(file_path)
-                logger.info(f"🗑️ Удалён временный файл: {file_path}")
-            except:
-                pass
+        await message.answer("❌ **Номер должен быть числом**", parse_mode="HTML")
 
 
 # ========== ОБРАБОТЧИК КНОПОК ==========
@@ -444,7 +354,7 @@ async def callback_handler(callback: types.CallbackQuery):
         message_id = int(parts[1])
         db.save_feedback(user_id, message_id, rating)
         await callback.message.edit_text(
-            callback.message.text.replace("\n\n<i>Оцени ответ, пожалуйста:</i>", ""),
+            callback.message.text.replace("\n\n_Оцени ответ, пожалуйста:_", ""),
             parse_mode="HTML"
         )
         return
@@ -461,7 +371,7 @@ async def callback_handler(callback: types.CallbackQuery):
         keyboard.adjust(1)
 
         await callback.message.edit_text(
-            "📝 <b>Записной блокнот</b>\n\n"
+            "📝 **Записной блокнот**\n\n"
             "Здесь ты можешь хранить свои заметки.",
             parse_mode="HTML",
             reply_markup=keyboard.as_markup()
@@ -474,7 +384,7 @@ async def callback_handler(callback: types.CallbackQuery):
 
     if callback.data == "notes_add":
         await callback.message.answer(
-            "📝 <b>Напиши текст заметки</b>\n"
+            "📝 **Напиши текст заметки**\n"
             "Используй команду /note текст",
             parse_mode="HTML"
         )
@@ -488,8 +398,7 @@ async def callback_handler(callback: types.CallbackQuery):
         model = callback.data.replace("model_", "")
         user_models[user_id] = model
         await callback.message.answer(
-            f"✅ <b>Модель переключена на {model_names.get(model, model)}</b>\n\n"
-            f"📸 <i>Для распознавания фото лучше всего подходит Llama</i>",
+            f"✅ **Модель переключена на {model_names.get(model, model)}**",
             parse_mode="HTML"
         )
         return
@@ -498,7 +407,7 @@ async def callback_handler(callback: types.CallbackQuery):
         mode = callback.data.replace("mode_", "")
         db.set_user_mode(user_id, mode, username, first_name, last_name)
         await callback.message.answer(
-            f"✅ <b>Режим «{mode}» активирован!</b>",
+            f"✅ **Режим «{mode}» активирован!**",
             parse_mode="HTML"
         )
         return
@@ -510,7 +419,7 @@ async def callback_handler(callback: types.CallbackQuery):
     if callback.data == "stats":
         stats = db.get_user_stats(user_id)
         await callback.message.answer(
-            f"📊 <b>Твоя статистика:</b>\n\n"
+            f"📊 **Твоя статистика:**\n\n"
             f"• Сообщений: {stats['messages']}\n"
             f"• 👍 Лайков: {stats['likes']}\n"
             f"• 👎 Дизлайков: {stats['dislikes']}\n\n"
@@ -521,10 +430,10 @@ async def callback_handler(callback: types.CallbackQuery):
 
     if is_admin(user_id) and callback.data == "admin_menu":
         prompts = db.get_all_prompts()
-        text = "📋 <b>Системные промпты:</b>\n\n"
+        text = "📋 **Системные промпты:**\n\n"
         for mode, prompt in prompts.items():
             short_prompt = prompt[:50] + "..." if len(prompt) > 50 else prompt
-            text += f"• <b>{mode}</b>: {short_prompt}\n\n"
+            text += f"• **{mode}**: {short_prompt}\n\n"
         await callback.message.answer(text, parse_mode="HTML")
         return
 
@@ -534,9 +443,13 @@ async def callback_handler(callback: types.CallbackQuery):
 async def handle_message(message: types.Message):
     user_id = message.from_user.id
 
-    # Игнорируем голосовые сообщения
+    # Игнорируем голосовые сообщения и фото
     if message.voice:
-        await message.answer("❌ Голосовые сообщения не поддерживаются. Пожалуйста, отправь текст или фото.")
+        await message.answer("❌ Голосовые сообщения не поддерживаются. Пожалуйста, отправь текст.")
+        return
+
+    if message.photo:
+        await message.answer("❌ Распознавание фото временно недоступно. Пожалуйста, отправь текст.")
         return
 
     # Админские состояния
@@ -546,13 +459,13 @@ async def handle_message(message: types.Message):
             admin_states['new_mode_name'] = mode_name
             admin_states.pop('awaiting_mode_name')
             admin_states['awaiting_mode_prompt'] = user_id
-            await message.answer(f"✅ Название: <b>{mode_name}</b>\n\nТеперь отправь текст промпта:", parse_mode="HTML")
+            await message.answer(f"✅ Название: **{mode_name}**\n\nТеперь отправь текст промпта:", parse_mode="HTML")
             return
 
         if 'awaiting_mode_prompt' in admin_states:
             mode_name = admin_states.get('new_mode_name')
             if db.add_prompt(mode_name, message.text):
-                await message.answer(f"✅ Режим <b>{mode_name}</b> создан!", parse_mode="HTML")
+                await message.answer(f"✅ Режим **{mode_name}** создан!", parse_mode="HTML")
             else:
                 await message.answer("❌ Ошибка: режим уже существует", parse_mode="HTML")
             admin_states.pop('awaiting_mode_prompt', None)
@@ -562,7 +475,7 @@ async def handle_message(message: types.Message):
         for mode, admin_id in list(admin_states.items()):
             if admin_id == user_id and mode not in ['awaiting_mode_name', 'awaiting_mode_prompt']:
                 if db.update_prompt(mode, message.text):
-                    await message.answer(f"✅ Промпт для <b>{mode}</b> обновлён!", parse_mode="HTML")
+                    await message.answer(f"✅ Промпт для **{mode}** обновлён!", parse_mode="HTML")
                 else:
                     await message.answer("❌ Ошибка при обновлении", parse_mode="HTML")
                 admin_states.pop(mode)
@@ -595,10 +508,8 @@ async def handle_message(message: types.Message):
     keyboard.add(InlineKeyboardButton(text="👍", callback_data=f"like_{message_id}"))
     keyboard.add(InlineKeyboardButton(text="👎", callback_data=f"dislike_{message_id}"))
 
-    photo_hint = "\n\n📸 <i>Также ты можешь отправить фото - я расскажу, что на нём!</i>"
-
     await message.answer(
-        response + photo_hint,
+        response,
         parse_mode="HTML",
         reply_markup=keyboard.as_markup()
     )
@@ -638,7 +549,6 @@ async def on_startup():
 
     bot_info = await bot.get_me()
     logger.info(f"🚀 Бот @{bot_info.username} запущен!")
-    logger.info(f"📸 Режим распознавания фото: АКТИВЕН (через OpenRouter)")
 
 
 async def on_shutdown():
