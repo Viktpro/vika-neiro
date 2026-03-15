@@ -21,23 +21,6 @@ from aiohttp import web
 from database import Database
 from ai_models import DeepSeekModel, OpenRouterModel, GigaChatModel
 
-# ========== ГОЛОСОВЫЕ МОДУЛИ (ТОЛЬКО РАСПОЗНАВАНИЕ) ==========
-try:
-    from voice.stt import STT
-
-    VOICE_ENABLED = True
-    try:
-        stt = STT()
-        print("✅ STT инициализирован (только распознавание речи)")
-    except Exception as e:
-        print(f"❌ Ошибка инициализации STT: {e}")
-        VOICE_ENABLED = False
-        stt = None
-except ImportError as e:
-    print(f"⚠️ Модуль STT не загружен: {e}")
-    VOICE_ENABLED = False
-    stt = None
-
 # ========== ОПРЕДЕЛЕНИЕ СРЕДЫ ==========
 IS_RENDER = os.environ.get('RENDER') is not None
 
@@ -125,7 +108,6 @@ FACTS = [
     "🌐 Первый веб-сайт в мире до сих пор работает: info.cern.ch",
 ]
 
-
 def is_admin(user_id):
     return str(user_id) in [str(admin_id) for admin_id in ADMIN_IDS]
 
@@ -163,13 +145,10 @@ async def start(message: types.Message):
     current_model = user_models.get(user_id, "gigachat")
     model_display = model_names.get(current_model, current_model)
 
-    voice_status = "🎤 Распознавание речи активно" if VOICE_ENABLED else "⚠️ Голосовой режим недоступен"
-
     await message.answer(
         f"👋 <b>Привет, {first_name}!</b>\n\n"
         f"🧠 <b>Нейробот Вики</b>\n"
-        f"🤖 <b>Модель:</b> {model_display}\n"
-        f"{voice_status}\n\n"
+        f"🤖 <b>Модель:</b> {model_display}\n\n"
         f"👇 <b>Выбери режим:</b>",
         parse_mode="HTML",
         reply_markup=keyboard.as_markup()
@@ -221,9 +200,7 @@ async def help_command(message: types.Message):
         "🔧 <b>Полезные:</b>\n"
         "/time - Текущее время\n"
         "/random - Случайное число\n"
-        "/fact - Интересный факт\n\n"
-        "🎤 <b>Голосовой ввод:</b>\n"
-        "Просто отправь голосовое сообщение - я распознаю его в текст!",
+        "/fact - Интересный факт",
         parse_mode="HTML"
     )
 
@@ -360,174 +337,8 @@ async def delnote_command(message: types.Message):
         await message.answer("❌ <b>Номер должен быть числом</b>", parse_mode="HTML")
 
 
-# ========== ОБРАБОТЧИК ГОЛОСОВЫХ СООБЩЕНИЙ (ТОЛЬКО РАСПОЗНАВАНИЕ) ==========
-@dp.message(lambda message: message.voice is not None)
-async def voice_message_handler(message: types.Message):
-    """Обработчик голосовых сообщений - распознаёт речь и отвечает текстом"""
-
-    if not VOICE_ENABLED or not stt:
-        await message.answer("❌ Распознавание речи временно недоступно. Отправь текст.")
-        return
-
-    user_id = message.from_user.id
-    logger.info(f"🎤 Получено голосовое сообщение от пользователя {user_id}")
-
-    mode = db.get_user_mode(user_id)
-    system_prompt = db.get_prompt(mode) or "Ты полезный ассистент."
-
-    status_msg = await message.answer("🎤 Распознаю речь...")
-
-    temp_files = []
-
-    try:
-        # Скачиваем голосовое сообщение
-        logger.info("📥 Скачиваю голосовой файл...")
-        file = await message.bot.get_file(message.voice.file_id)
-
-        with tempfile.NamedTemporaryFile(suffix='.ogg', delete=False) as tmp_file:
-            await message.bot.download_file(file.file_path, tmp_file.name)
-            ogg_path = tmp_file.name
-            temp_files.append(ogg_path)
-            logger.info(f"✅ Файл скачан: {ogg_path}")
-
-        # Преобразуем речь в текст
-        await status_msg.edit_text("🔄 Преобразую речь в текст...")
-        logger.info("🎤 Запускаю распознавание речи...")
-
-        recognized_text = stt.audio_to_text(ogg_path)
-        logger.info(f"📝 Распознано: {recognized_text}")
-
-        if recognized_text.startswith("❌") or recognized_text.startswith("🔇"):
-            await status_msg.edit_text(recognized_text)
-            return
-
-        # Показываем распознанный текст
-        await status_msg.edit_text(
-            f"📝 <b>Распознано:</b>\n{recognized_text}\n\n"
-            f"🤔 Думаю...",
-            parse_mode="HTML"
-        )
-
-        db.save_message(user_id, 'user', f"[голосовое] {recognized_text}", mode)
-
-        # Получаем ответ от AI (как на обычный текст)
-        logger.info("🤖 Отправляю запрос в AI-модель...")
-
-        user_model = user_models.get(user_id, "gigachat")
-
-        if user_model == "gigachat":
-            response = giga.ask(recognized_text, system_prompt)
-        elif user_model == "deepseek":
-            response = deepseek.ask(recognized_text, system_prompt)
-        elif user_model in ["mistral", "llama", "qwen", "gemma"]:
-            response = openrouter.ask(recognized_text, model=user_model, system_prompt=system_prompt)
-        else:
-            response = giga.ask(recognized_text, system_prompt)
-
-        logger.info(f"✅ Ответ получен, длина: {len(response)} символов")
-
-        message_id = db.save_message(user_id, 'assistant', response, mode)
-
-        # Отправляем текстовый ответ (без озвучки)
-        keyboard = InlineKeyboardBuilder()
-        keyboard.add(InlineKeyboardButton(text="👍", callback_data=f"like_{message_id}"))
-        keyboard.add(InlineKeyboardButton(text="👎", callback_data=f"dislike_{message_id}"))
-
-        await message.answer(
-            response + "\n\n<i>Ответ на голосовое сообщение</i>",
-            parse_mode="HTML",
-            reply_markup=keyboard.as_markup()
-        )
-
-        await status_msg.delete()
-
-    except Exception as e:
-        logger.error(f"❌ Ошибка обработки голоса: {e}", exc_info=True)
-        await status_msg.edit_text(
-            f"❌ Произошла ошибка при распознавании речи.\n"
-            f"Попробуй отправить текст."
-        )
-
-    finally:
-        for file_path in temp_files:
-            try:
-                os.unlink(file_path)
-            except:
-                pass
-
-
-# ========== ОБРАБОТЧИК ТЕКСТОВЫХ СООБЩЕНИЙ ==========
-@dp.message()
-async def handle_message(message: types.Message):
-    user_id = message.from_user.id
-
-    # Админские состояния
-    if is_admin(user_id):
-        if 'awaiting_mode_name' in admin_states:
-            mode_name = message.text.strip().lower().replace(' ', '_')
-            admin_states['new_mode_name'] = mode_name
-            admin_states.pop('awaiting_mode_name')
-            admin_states['awaiting_mode_prompt'] = user_id
-            await message.answer(f"✅ Название: <b>{mode_name}</b>\n\nТеперь отправь текст промпта:", parse_mode="HTML")
-            return
-
-        if 'awaiting_mode_prompt' in admin_states:
-            mode_name = admin_states.get('new_mode_name')
-            if db.add_prompt(mode_name, message.text):
-                await message.answer(f"✅ Режим <b>{mode_name}</b> создан!", parse_mode="HTML")
-            else:
-                await message.answer("❌ Ошибка: режим уже существует", parse_mode="HTML")
-            admin_states.pop('awaiting_mode_prompt', None)
-            admin_states.pop('new_mode_name', None)
-            return
-
-        for mode, admin_id in list(admin_states.items()):
-            if admin_id == user_id and mode not in ['awaiting_mode_name', 'awaiting_mode_prompt']:
-                if db.update_prompt(mode, message.text):
-                    await message.answer(f"✅ Промпт для <b>{mode}</b> обновлён!", parse_mode="HTML")
-                else:
-                    await message.answer("❌ Ошибка при обновлении", parse_mode="HTML")
-                admin_states.pop(mode)
-                return
-
-    # Обычный текстовый режим
-    mode = db.get_user_mode(user_id)
-    system_prompt = db.get_prompt(mode) or "Ты полезный ассистент."
-    db.save_message(user_id, 'user', message.text, mode)
-
-    await message.bot.send_chat_action(message.chat.id, action="typing")
-
-    # Выбираем модель
-    user_model = user_models.get(user_id, "gigachat")
-
-    try:
-        if user_model == "gigachat":
-            response = giga.ask(message.text, system_prompt)
-        elif user_model == "deepseek":
-            response = deepseek.ask(message.text, system_prompt)
-        elif user_model in ["mistral", "llama", "qwen", "gemma"]:
-            response = openrouter.ask(message.text, model=user_model, system_prompt=system_prompt)
-        else:
-            response = giga.ask(message.text, system_prompt)
-    except Exception as e:
-        response = f"❌ Ошибка AI: {str(e)}"
-
-    message_id = db.save_message(user_id, 'assistant', response, mode)
-
-    keyboard = InlineKeyboardBuilder()
-    keyboard.add(InlineKeyboardButton(text="👍", callback_data=f"like_{message_id}"))
-    keyboard.add(InlineKeyboardButton(text="👎", callback_data=f"dislike_{message_id}"))
-
-    voice_hint = "\n\n<i>Также ты можешь отправить голосовое сообщение - я распознаю его в текст!</i>" if VOICE_ENABLED else ""
-
-    await message.answer(
-        response + voice_hint,
-        parse_mode="HTML",
-        reply_markup=keyboard.as_markup()
-    )
-
-
 # ========== ОБРАБОТЧИК КНОПОК ==========
+
 @dp.callback_query()
 async def callback_handler(callback: types.CallbackQuery):
     await callback.answer()
@@ -626,6 +437,79 @@ async def callback_handler(callback: types.CallbackQuery):
         return
 
 
+# ========== ОБРАБОТЧИК ТЕКСТОВЫХ СООБЩЕНИЙ ==========
+@dp.message()
+async def handle_message(message: types.Message):
+    user_id = message.from_user.id
+
+    # Игнорируем голосовые сообщения
+    if message.voice:
+        await message.answer("❌ Голосовые сообщения не поддерживаются. Пожалуйста, отправь текст.")
+        return
+
+    # Админские состояния
+    if is_admin(user_id):
+        if 'awaiting_mode_name' in admin_states:
+            mode_name = message.text.strip().lower().replace(' ', '_')
+            admin_states['new_mode_name'] = mode_name
+            admin_states.pop('awaiting_mode_name')
+            admin_states['awaiting_mode_prompt'] = user_id
+            await message.answer(f"✅ Название: <b>{mode_name}</b>\n\nТеперь отправь текст промпта:", parse_mode="HTML")
+            return
+
+        if 'awaiting_mode_prompt' in admin_states:
+            mode_name = admin_states.get('new_mode_name')
+            if db.add_prompt(mode_name, message.text):
+                await message.answer(f"✅ Режим <b>{mode_name}</b> создан!", parse_mode="HTML")
+            else:
+                await message.answer("❌ Ошибка: режим уже существует", parse_mode="HTML")
+            admin_states.pop('awaiting_mode_prompt', None)
+            admin_states.pop('new_mode_name', None)
+            return
+
+        for mode, admin_id in list(admin_states.items()):
+            if admin_id == user_id and mode not in ['awaiting_mode_name', 'awaiting_mode_prompt']:
+                if db.update_prompt(mode, message.text):
+                    await message.answer(f"✅ Промпт для <b>{mode}</b> обновлён!", parse_mode="HTML")
+                else:
+                    await message.answer("❌ Ошибка при обновлении", parse_mode="HTML")
+                admin_states.pop(mode)
+                return
+
+    # Обычный текстовый режим
+    mode = db.get_user_mode(user_id)
+    system_prompt = db.get_prompt(mode) or "Ты полезный ассистент."
+    db.save_message(user_id, 'user', message.text, mode)
+
+    await message.bot.send_chat_action(message.chat.id, action="typing")
+
+    user_model = user_models.get(user_id, "gigachat")
+
+    try:
+        if user_model == "gigachat":
+            response = giga.ask(message.text, system_prompt)
+        elif user_model == "deepseek":
+            response = deepseek.ask(message.text, system_prompt)
+        elif user_model in ["mistral", "llama", "qwen", "gemma"]:
+            response = openrouter.ask(message.text, model=user_model, system_prompt=system_prompt)
+        else:
+            response = giga.ask(message.text, system_prompt)
+    except Exception as e:
+        response = f"❌ Ошибка AI: {str(e)}"
+
+    message_id = db.save_message(user_id, 'assistant', response, mode)
+
+    keyboard = InlineKeyboardBuilder()
+    keyboard.add(InlineKeyboardButton(text="👍", callback_data=f"like_{message_id}"))
+    keyboard.add(InlineKeyboardButton(text="👎", callback_data=f"dislike_{message_id}"))
+
+    await message.answer(
+        response,
+        parse_mode="HTML",
+        reply_markup=keyboard.as_markup()
+    )
+
+
 # ========== ОБРАБОТЧИК ВЕБХУКА ==========
 async def handle_webhook(request: web.Request) -> web.Response:
     try:
@@ -660,7 +544,6 @@ async def on_startup():
 
     bot_info = await bot.get_me()
     logger.info(f"🚀 Бот @{bot_info.username} запущен!")
-    logger.info(f"🎤 Распознавание речи: {'ВКЛЮЧЕНО' if VOICE_ENABLED else 'ВЫКЛЮЧЕНО'}")
 
 
 async def on_shutdown():
@@ -698,7 +581,6 @@ async def main():
             await runner.cleanup()
     else:
         logger.info("🚀 Бот запущен в локальном режиме!")
-        logger.info(f"🎤 Распознавание речи: {'ВКЛЮЧЕНО' if VOICE_ENABLED else 'ВЫКЛЮЧЕНО'}")
         await dp.start_polling(bot)
 
 
