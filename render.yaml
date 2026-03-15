@@ -3,8 +3,7 @@ services:
     name: vika-neiro-bot
     runtime: python
     region: frankfurt
-    buildCommand: |
-      apt-get update && apt-get install -y ffmpeg && pip install -r requirements.txt
+    buildCommand: pip install -r requirements.txt
     startCommand: python aiogram_bot.py
     envVars:
       - key: TELEGRAM_TOKEN

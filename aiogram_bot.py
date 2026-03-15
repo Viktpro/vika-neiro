@@ -22,6 +22,78 @@ from aiohttp import web
 from database import Database
 from ai_models import DeepSeekModel, OpenRouterModel, GigaChatModel
 
+# ========== УПРОЩЁННЫЙ ГОЛОС (Google Speech + gTTS) ==========
+try:
+    import speech_recognition as sr
+    from gtts import gTTS
+    from pydub import AudioSegment
+
+
+    class SimpleSTT:
+        def __init__(self):
+            self.recognizer = sr.Recognizer()
+            print("✅ Google STT инициализирован")
+
+        def audio_to_text(self, audio_path):
+            try:
+                with sr.AudioFile(audio_path) as source:
+                    audio = self.recognizer.record(source)
+                    text = self.recognizer.recognize_google(audio, language="ru-RU")
+                    return text
+            except sr.UnknownValueError:
+                return "🔇 Не удалось распознать речь"
+            except sr.RequestError:
+                return "❌ Ошибка сервиса распознавания"
+            except Exception as e:
+                return f"❌ Ошибка: {e}"
+
+
+    class SimpleTTS:
+        def __init__(self):
+            self.language = 'ru'
+            print("✅ Google TTS инициализирован")
+
+        def set_language(self, lang):
+            self.language = lang
+
+        def text_to_ogg(self, text, output_path):
+            try:
+                # Создаём временный MP3
+                mp3_path = output_path.replace('.ogg', '.mp3')
+                tts = gTTS(text=text, lang=self.language, slow=False)
+                tts.save(mp3_path)
+
+                # Конвертируем в OGG
+                audio = AudioSegment.from_mp3(mp3_path)
+                audio.export(output_path, format="ogg")
+
+                # Удаляем временный MP3
+                os.remove(mp3_path)
+
+                return output_path
+            except Exception as e:
+                print(f"❌ Ошибка TTS: {e}")
+                return None
+
+
+    # Инициализируем голосовые модули
+    stt = SimpleSTT()
+    tts = SimpleTTS()
+    VOICE_ENABLED = True
+    print("🎉 Голосовые модули успешно загружены!")
+
+except ImportError as e:
+    print(f"⚠️ Библиотеки не установлены: {e}")
+    print("💡 Установите: pip install SpeechRecognition gtts pydub")
+    VOICE_ENABLED = False
+    stt = None
+    tts = None
+except Exception as e:
+    print(f"❌ Ошибка инициализации голоса: {e}")
+    VOICE_ENABLED = False
+    stt = None
+    tts = None
+
 # ========== ОПРЕДЕЛЕНИЕ СРЕДЫ ==========
 IS_RENDER = os.environ.get('RENDER') is not None
 
@@ -53,72 +125,6 @@ ADMIN_IDS = [1467484237, 8249255843]
 print(f"🔑 Токен: {TELEGRAM_TOKEN[:10]}...")
 print(f"🔑 Client ID: {CLIENT_ID[:10]}...")
 
-# ========== ДИАГНОСТИКА FFMPEG ==========
-print("\n🔍 Проверка FFmpeg...")
-try:
-    result = subprocess.run(['ffmpeg', '-version'], capture_output=True, text=True, timeout=5)
-    if result.returncode == 0:
-        ffmpeg_version = result.stdout.split('\n')[0]
-        print(f"✅ FFmpeg установлен: {ffmpeg_version}")
-    else:
-        print("❌ FFmpeg не работает")
-except FileNotFoundError:
-    print("❌ FFmpeg не найден")
-except Exception as e:
-    print(f"❌ Ошибка: {e}")
-
-# ========== ДИАГНОСТИКА ГОЛОСОВЫХ МОДУЛЕЙ ==========
-print("\n🔍 Проверка голосовых модулей...")
-print(f"📁 Текущая директория: {os.getcwd()}")
-print(f"📁 Содержимое: {os.listdir('.')}")
-
-VOICE_ENABLED = False
-stt = None
-tts = None
-
-if os.path.exists('voice'):
-    print(f"✅ Папка voice найдена")
-    print(f"📁 Содержимое voice: {os.listdir('voice')}")
-
-    try:
-        from voice.stt import STT
-
-        print("✅ Модуль voice.stt импортирован")
-
-        from voice.tts import TTS
-
-        print("✅ Модуль voice.tts импортирован")
-
-        VOICE_ENABLED = True
-        print("✅ Все модули импортированы")
-    except ImportError as e:
-        print(f"❌ Ошибка импорта: {e}")
-    except Exception as e:
-        print(f"❌ Ошибка: {e}")
-else:
-    print("❌ Папка voice НЕ найдена!")
-
-if VOICE_ENABLED:
-    try:
-        print("\n🔧 Инициализация STT...")
-        stt = STT()
-        print("✅ STT инициализирован")
-
-        print("🔧 Инициализация TTS...")
-        tts = TTS()
-        print("✅ TTS инициализирован")
-
-        print("🎉 Голос готов!")
-    except Exception as e:
-        print(f"❌ Ошибка инициализации: {e}")
-        VOICE_ENABLED = False
-        import traceback
-
-        traceback.print_exc()
-
-print(f"\n🎤 Статус голоса: {'ВКЛЮЧЕН' if VOICE_ENABLED else 'ВЫКЛЮЧЕН'}")
-print("=" * 50)
-
 # ========== ИНИЦИАЛИЗАЦИЯ ==========
 admin_states = {}
 db = Database()
@@ -141,7 +147,7 @@ bot = Bot(
 )
 dp = Dispatcher()
 
-# ========== ИНИЦИАЛИЗАЦИЯ AI-МОДЕЛЕЙ ==========
+# ========== AI-МОДЕЛИ ==========
 giga = GigaChatModel(CLIENT_ID, CLIENT_SECRET)
 deepseek = DeepSeekModel()
 openrouter = OpenRouterModel()
@@ -167,11 +173,11 @@ model_descriptions = {
 }
 
 FACTS = [
-    "🧠 Python назван в честь Monty Python, а не змеи.",
-    "📱 Первое SMS: «Merry Christmas» (1992).",
-    "💻 Первый вирус: «Elk Cloner» (1983).",
-    "🔍 Google назывался Backrub.",
-    "🎮 Minecraft - самая продаваемая игра.",
+    "🧠 Python назван в честь Monty Python",
+    "📱 Первое SMS: Merry Christmas",
+    "💻 Первый вирус: Elk Cloner",
+    "🔍 Google назывался Backrub",
+    "🎮 Minecraft - самая продаваемая",
     "🌐 Первый сайт: info.cern.ch",
 ]
 
@@ -212,7 +218,8 @@ async def start(message: types.Message):
 
     current_model = user_models.get(user_id, "gigachat")
     model_display = model_names.get(current_model, current_model)
-    voice_status = "🎤 Голос активен" if VOICE_ENABLED else "⚠️ Голос отключен"
+
+    voice_status = "🎤 Голос активен (Google)" if VOICE_ENABLED else "⚠️ Голос отключен"
 
     await message.answer(
         f"👋 <b>Привет, {first_name}!</b>\n\n"
@@ -259,22 +266,22 @@ async def help_command(message: types.Message):
         "📌 <b>Основные:</b>\n"
         "/start - Главное меню\n"
         "/help - Эта справка\n"
-        "/stats - Твоя статистика\n"
+        "/stats - Статистика\n"
         "/clear - Сбросить диалог\n\n"
         "📝 <b>Заметки:</b>\n"
-        "/note текст - сохранить заметку\n"
-        "/notes - показать заметки\n"
-        "/delnote номер - удалить заметку\n\n"
+        "/note текст - сохранить\n"
+        "/notes - показать\n"
+        "/delnote номер - удалить\n\n"
         "🤖 <b>AI-модели:</b>\n"
-        "/model - Выбрать нейросеть\n\n"
+        "/model - Выбрать модель\n\n"
         "🔧 <b>Полезные:</b>\n"
-        "/time - Текущее время\n"
+        "/time - Время\n"
         "/random - Случайное число\n"
         "/fact - Интересный факт\n\n"
-        "🎤 <b>Голос:</b>\n"
-        "/voice_ru - Русский голос\n"
-        "/voice_en - Английский голос\n"
-        "Или просто отправь голосовое сообщение!",
+        "🎤 <b>Голос (Google):</b>\n"
+        "/voice_ru - Русский\n"
+        "/voice_en - Английский\n"
+        "Отправь голосовое!",
         parse_mode="HTML"
     )
 
@@ -284,7 +291,7 @@ async def time_command(message: types.Message):
     now = datetime.now()
     await message.answer(
         f"📅 <b>Сегодня:</b> {now.strftime('%d.%m.%Y')}\n"
-        f"⏰ <b>Точное время:</b> {now.strftime('%H:%M:%S')}",
+        f"⏰ <b>Время:</b> {now.strftime('%H:%M:%S')}",
         parse_mode="HTML"
     )
 
@@ -297,7 +304,7 @@ async def random_command(message: types.Message):
             min_num = int(args[1])
             max_num = int(args[2])
             number = random.randint(min_num, max_num)
-            await message.answer(f"🎲 <b>Случайное число от {min_num} до {max_num}:</b> {number}", parse_mode="HTML")
+            await message.answer(f"🎲 <b>Число от {min_num} до {max_num}:</b> {number}", parse_mode="HTML")
         except:
             await message.answer("❌ Используй: /random мин макс", parse_mode="HTML")
     else:
@@ -308,7 +315,7 @@ async def random_command(message: types.Message):
 @dp.message(Command("fact"))
 async def fact_command(message: types.Message):
     fact = random.choice(FACTS)
-    await message.answer(f"🔮 <b>Интересный факт:</b>\n\n{fact}", parse_mode="HTML")
+    await message.answer(f"🔮 <b>Факт:</b>\n\n{fact}", parse_mode="HTML")
 
 
 @dp.message(Command("stats"))
@@ -332,18 +339,18 @@ async def clear_command(message: types.Message):
 async def voice_ru(message: types.Message):
     if VOICE_ENABLED and tts:
         tts.set_language('ru')
-        await message.answer("✅ Голос переключён на <b>русский</b>", parse_mode="HTML")
+        await message.answer("✅ Голос переключён на <b>русский</b> (Google)", parse_mode="HTML")
     else:
-        await message.answer("❌ Голосовой режим недоступен", parse_mode="HTML")
+        await message.answer("❌ Голос недоступен", parse_mode="HTML")
 
 
 @dp.message(Command("voice_en"))
 async def voice_en(message: types.Message):
     if VOICE_ENABLED and tts:
         tts.set_language('en')
-        await message.answer("✅ Голос переключён на <b>английский</b>", parse_mode="HTML")
+        await message.answer("✅ Голос переключён на <b>английский</b> (Google)", parse_mode="HTML")
     else:
-        await message.answer("❌ Голосовой режим недоступен", parse_mode="HTML")
+        await message.answer("❌ Голос недоступен", parse_mode="HTML")
 
 
 @dp.message(Command("cancel"))
@@ -355,7 +362,7 @@ async def cancel_command(message: types.Message):
             del admin_states[key]
             cancelled = True
     if cancelled:
-        await message.answer("✅ Действие отменено. /start", parse_mode="HTML")
+        await message.answer("✅ Действие отменено", parse_mode="HTML")
     else:
         await message.answer("❌ Нет активных действий", parse_mode="HTML")
 
@@ -367,7 +374,7 @@ async def note_command(message: types.Message):
     text = message.text.replace("/note", "", 1).strip()
     if not text:
         await message.answer(
-            "📝 <b>Как пользоваться заметками:</b>\n\n"
+            "📝 <b>Как пользоваться:</b>\n\n"
             "/note текст - сохранить\n"
             "/notes - показать\n"
             "/delnote номер - удалить",
@@ -400,7 +407,7 @@ async def notes_command(message: types.Message):
 async def delnote_command(message: types.Message):
     args = message.text.split()
     if len(args) < 2:
-        await message.answer("❌ <b>Укажи номер</b>\n\nПример: /delnote 5", parse_mode="HTML")
+        await message.answer("❌ <b>Укажи номер</b>\n\n/delnote 5", parse_mode="HTML")
         return
     try:
         note_id = int(args[1])
@@ -413,28 +420,57 @@ async def delnote_command(message: types.Message):
         await message.answer("❌ <b>Номер должен быть числом</b>", parse_mode="HTML")
 
 
-# ========== ГОЛОС ==========
+@dp.callback_query(lambda c: c.data == "notes_menu")
+async def notes_menu_callback(callback: types.CallbackQuery):
+    keyboard = InlineKeyboardBuilder()
+    keyboard.add(InlineKeyboardButton(text="📝 Показать", callback_data="notes_show"))
+    keyboard.add(InlineKeyboardButton(text="➕ Добавить", callback_data="notes_add"))
+    keyboard.add(InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main"))
+    keyboard.adjust(1)
+    await callback.message.edit_text(
+        "📝 <b>Записной блокнот</b>",
+        parse_mode="HTML",
+        reply_markup=keyboard.as_markup()
+    )
+
+
+@dp.callback_query(lambda c: c.data == "notes_show")
+async def notes_show_callback(callback: types.CallbackQuery):
+    await callback.answer()
+    await notes_command(callback.message)
+
+
+@dp.callback_query(lambda c: c.data == "notes_add")
+async def notes_add_callback(callback: types.CallbackQuery):
+    await callback.answer()
+    await callback.message.answer("📝 <b>Напиши текст заметки</b>\n/note текст", parse_mode="HTML")
+
+
+# ========== ГОЛОСОВЫЕ СООБЩЕНИЯ ==========
 @dp.message(lambda message: message.voice is not None)
 async def voice_message_handler(message: types.Message):
     if not VOICE_ENABLED or not stt or not tts:
-        await message.answer("❌ Голос недоступен")
+        await message.answer("❌ Голос временно недоступен. Отправь текст.")
         return
 
     user_id = message.from_user.id
-    logger.info(f"🎤 Голос от {user_id}")
+    logger.info(f"🎤 Голосовое от {user_id}")
 
     mode = db.get_user_mode(user_id)
     system_prompt = db.get_prompt(mode) or "Ты полезный ассистент."
-    status_msg = await message.answer("🎤 Распознаю...")
+
+    status_msg = await message.answer("🎤 Распознаю речь через Google...")
     temp_files = []
 
     try:
+        # Скачиваем голосовое
         file = await message.bot.get_file(message.voice.file_id)
         with tempfile.NamedTemporaryFile(suffix='.ogg', delete=False) as tmp_file:
             await message.bot.download_file(file.file_path, tmp_file.name)
             ogg_path = tmp_file.name
             temp_files.append(ogg_path)
 
+        # Распознаём речь
         await status_msg.edit_text("🔄 Распознавание...")
         recognized_text = stt.audio_to_text(ogg_path)
 
@@ -442,21 +478,22 @@ async def voice_message_handler(message: types.Message):
             await status_msg.edit_text(recognized_text)
             return
 
-        await status_msg.edit_text(f"📝 <b>Распознано:</b>\n{recognized_text}\n\n🤔 Думаю...", parse_mode="HTML")
+        await status_msg.edit_text(f"📝 <b>Распознано:</b> {recognized_text}\n\n🤔 Думаю...", parse_mode="HTML")
         db.save_message(user_id, 'user', f"[голос] {recognized_text}", mode)
 
+        # Ответ AI
         user_model = user_models.get(user_id, "gigachat")
         if user_model == "gigachat":
             response = giga.ask(recognized_text, system_prompt)
         elif user_model == "deepseek":
             response = deepseek.ask(recognized_text, system_prompt)
-        elif user_model in ["mistral", "llama", "qwen", "gemma"]:
-            response = openrouter.ask(recognized_text, model=user_model, system_prompt=system_prompt)
         else:
-            response = giga.ask(recognized_text, system_prompt)
+            response = openrouter.ask(recognized_text, model=user_model, system_prompt=system_prompt)
 
         message_id = db.save_message(user_id, 'assistant', response, mode)
-        await status_msg.edit_text("🔊 Создаю голос...")
+
+        # Создаём голосовой ответ через Google TTS
+        await status_msg.edit_text("🔊 Создаю голос через Google...")
 
         with tempfile.NamedTemporaryFile(suffix='.ogg', delete=False) as tmp_file:
             output_path = tmp_file.name
@@ -467,23 +504,33 @@ async def voice_message_handler(message: types.Message):
         if voice_path and Path(voice_path).exists():
             from aiogram.types import FSInputFile
             voice_file = FSInputFile(voice_path)
-            await message.answer_voice(voice=voice_file, caption="<i>Голосовой ответ</i>", parse_mode="HTML")
+
+            await message.answer_voice(
+                voice=voice_file,
+                caption="<i>Google TTS</i>",
+                parse_mode="HTML"
+            )
 
             keyboard = InlineKeyboardBuilder()
             keyboard.add(InlineKeyboardButton(text="👍", callback_data=f"like_{message_id}"))
             keyboard.add(InlineKeyboardButton(text="👎", callback_data=f"dislike_{message_id}"))
-            await message.answer(response + "\n\n<i>Оцени:</i>", parse_mode="HTML", reply_markup=keyboard.as_markup())
+
+            await message.answer(
+                response + "\n\n<i>Оцени ответ:</i>",
+                parse_mode="HTML",
+                reply_markup=keyboard.as_markup()
+            )
             await status_msg.delete()
         else:
             await status_msg.edit_text(response + "\n\n(голос не создан)", parse_mode="HTML")
 
     except Exception as e:
-        logger.error(f"❌ Ошибка: {e}", exc_info=True)
+        logger.error(f"❌ Ошибка голоса: {e}")
         await status_msg.edit_text("❌ Ошибка обработки голоса")
     finally:
-        for file_path in temp_files:
+        for f in temp_files:
             try:
-                os.unlink(file_path)
+                os.unlink(f)
             except:
                 pass
 
@@ -503,7 +550,7 @@ async def callback_handler(callback: types.CallbackQuery):
         message_id = int(parts[1])
         db.save_feedback(user_id, message_id, rating)
         await callback.message.edit_text(
-            callback.message.text.replace("\n\n<i>Оцени:</i>", ""),
+            callback.message.text.replace("\n\n<i>Оцени ответ:</i>", ""),
             parse_mode="HTML"
         )
         return
@@ -513,21 +560,7 @@ async def callback_handler(callback: types.CallbackQuery):
         return
 
     if callback.data == "notes_menu":
-        keyboard = InlineKeyboardBuilder()
-        keyboard.add(InlineKeyboardButton(text="📝 Показать", callback_data="notes_show"))
-        keyboard.add(InlineKeyboardButton(text="➕ Добавить", callback_data="notes_add"))
-        keyboard.add(InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main"))
-        keyboard.adjust(1)
-        await callback.message.edit_text("📝 <b>Записной блокнот</b>", parse_mode="HTML",
-                                         reply_markup=keyboard.as_markup())
-        return
-
-    if callback.data == "notes_show":
-        await notes_command(callback.message)
-        return
-
-    if callback.data == "notes_add":
-        await callback.message.answer("📝 <b>Напиши текст заметки</b>\n/note текст", parse_mode="HTML")
+        await notes_menu_callback(callback)
         return
 
     if callback.data == "model_menu":
@@ -537,13 +570,19 @@ async def callback_handler(callback: types.CallbackQuery):
     if callback.data.startswith("model_"):
         model = callback.data.replace("model_", "")
         user_models[user_id] = model
-        await callback.message.answer(f"✅ <b>Модель: {model_names.get(model, model)}</b>", parse_mode="HTML")
+        await callback.message.answer(
+            f"✅ <b>Модель: {model_names.get(model, model)}</b>",
+            parse_mode="HTML"
+        )
         return
 
     if callback.data.startswith("mode_"):
         mode = callback.data.replace("mode_", "")
         db.set_user_mode(user_id, mode, username, first_name, last_name)
-        await callback.message.answer(f"✅ <b>Режим «{mode}»</b>", parse_mode="HTML")
+        await callback.message.answer(
+            f"✅ <b>Режим «{mode}» активирован!</b>",
+            parse_mode="HTML"
+        )
         return
 
     if callback.data == "help":
@@ -553,7 +592,10 @@ async def callback_handler(callback: types.CallbackQuery):
     if callback.data == "stats":
         stats = db.get_user_stats(user_id)
         await callback.message.answer(
-            f"📊 <b>Статистика:</b>\n\n• Сообщений: {stats['messages']}\n• 👍 {stats['likes']}\n• 👎 {stats['dislikes']}\n\nВсего: {db.get_all_users_count()}",
+            f"📊 <b>Статистика:</b>\n\n"
+            f"• Сообщений: {stats['messages']}\n"
+            f"• 👍: {stats['likes']}\n"
+            f"• 👎: {stats['dislikes']}",
             parse_mode="HTML"
         )
         return
@@ -562,13 +604,13 @@ async def callback_handler(callback: types.CallbackQuery):
         prompts = db.get_all_prompts()
         text = "📋 <b>Промпты:</b>\n\n"
         for mode, prompt in prompts.items():
-            short_prompt = prompt[:50] + "..." if len(prompt) > 50 else prompt
-            text += f"• <b>{mode}</b>: {short_prompt}\n\n"
+            short = prompt[:50] + "..." if len(prompt) > 50 else prompt
+            text += f"• <b>{mode}</b>: {short}\n\n"
         await callback.message.answer(text, parse_mode="HTML")
         return
 
 
-# ========== ОСНОВНОЙ ОБРАБОТЧИК ==========
+# ========== ТЕКСТОВЫЕ СООБЩЕНИЯ ==========
 @dp.message()
 async def handle_message(message: types.Message):
     user_id = message.from_user.id
@@ -579,7 +621,7 @@ async def handle_message(message: types.Message):
             admin_states['new_mode_name'] = mode_name
             admin_states.pop('awaiting_mode_name')
             admin_states['awaiting_mode_prompt'] = user_id
-            await message.answer(f"✅ Название: <b>{mode_name}</b>\n\nТеперь текст промпта:", parse_mode="HTML")
+            await message.answer(f"✅ <b>{mode_name}</b>\n\nТеперь отправь промпт:", parse_mode="HTML")
             return
 
         if 'awaiting_mode_prompt' in admin_states:
@@ -587,7 +629,7 @@ async def handle_message(message: types.Message):
             if db.add_prompt(mode_name, message.text):
                 await message.answer(f"✅ Режим <b>{mode_name}</b> создан!", parse_mode="HTML")
             else:
-                await message.answer("❌ Режим уже существует", parse_mode="HTML")
+                await message.answer("❌ Ошибка: режим существует", parse_mode="HTML")
             admin_states.pop('awaiting_mode_prompt', None)
             admin_states.pop('new_mode_name', None)
             return
@@ -595,7 +637,7 @@ async def handle_message(message: types.Message):
         for mode, admin_id in list(admin_states.items()):
             if admin_id == user_id and mode not in ['awaiting_mode_name', 'awaiting_mode_prompt']:
                 if db.update_prompt(mode, message.text):
-                    await message.answer(f"✅ Промпт для <b>{mode}</b> обновлён!", parse_mode="HTML")
+                    await message.answer(f"✅ Промпт <b>{mode}</b> обновлён!", parse_mode="HTML")
                 else:
                     await message.answer("❌ Ошибка", parse_mode="HTML")
                 admin_states.pop(mode)
@@ -613,20 +655,19 @@ async def handle_message(message: types.Message):
             response = giga.ask(message.text, system_prompt)
         elif user_model == "deepseek":
             response = deepseek.ask(message.text, system_prompt)
-        elif user_model in ["mistral", "llama", "qwen", "gemma"]:
-            response = openrouter.ask(message.text, model=user_model, system_prompt=system_prompt)
         else:
-            response = giga.ask(message.text, system_prompt)
+            response = openrouter.ask(message.text, model=user_model, system_prompt=system_prompt)
     except Exception as e:
         response = f"❌ Ошибка AI: {str(e)}"
 
     message_id = db.save_message(user_id, 'assistant', response, mode)
+
     keyboard = InlineKeyboardBuilder()
     keyboard.add(InlineKeyboardButton(text="👍", callback_data=f"like_{message_id}"))
     keyboard.add(InlineKeyboardButton(text="👎", callback_data=f"dislike_{message_id}"))
 
-    voice_hint = "\n\n<i>Можно отправить голосовое!</i>" if VOICE_ENABLED else ""
-    await message.answer(response + voice_hint, parse_mode="HTML", reply_markup=keyboard.as_markup())
+    hint = "\n\n<i>Отправь голосовое!</i>" if VOICE_ENABLED else ""
+    await message.answer(response + hint, parse_mode="HTML", reply_markup=keyboard.as_markup())
 
 
 # ========== ВЕБХУК ==========
@@ -637,34 +678,26 @@ async def handle_webhook(request: web.Request) -> web.Response:
         await dp.feed_update(bot, update)
         return web.Response(status=200)
     except Exception as e:
-        logger.error(f"❌ Ошибка вебхука: {e}")
+        logger.error(f"❌ Вебхук: {e}")
         return web.Response(status=500)
 
 
 async def healthcheck(request: web.Request) -> web.Response:
-    return web.Response(text=f"Bot running! Time: {datetime.now()}", status=200)
+    return web.Response(text=f"Бот работает! Голос: {'✅' if VOICE_ENABLED else '❌'}")
 
 
 async def on_startup():
     if USE_WEBHOOK:
         await bot.delete_webhook(drop_pending_updates=True)
         webhook_url = f"https://{PUBLIC_DOMAIN}/webhook"
-        await bot.set_webhook(webhook_url, allowed_updates=["message", "callback_query"], drop_pending_updates=True)
+        await bot.set_webhook(webhook_url, allowed_updates=["message", "callback_query"])
         logger.info(f"✅ Вебхук: {webhook_url}")
-        webhook_info = await bot.get_webhook_info()
-        logger.info(f"📊 {webhook_info.url}")
-    else:
-        logger.info("💻 Локальный режим")
-    bot_info = await bot.get_me()
-    logger.info(f"🚀 @{bot_info.username} запущен!")
-    logger.info(f"🎤 Голос: {'ВКЛЮЧЕН' if VOICE_ENABLED else 'ВЫКЛЮЧЕН'}")
 
 
 async def on_shutdown():
     if USE_WEBHOOK:
         await bot.delete_webhook()
     await bot.session.close()
-    logger.info("✅ Бот остановлен")
 
 
 async def main():
@@ -676,29 +709,20 @@ async def main():
         app.router.add_post('/webhook', handle_webhook)
         app.router.add_get('/', healthcheck)
         app.router.add_get('/health', healthcheck)
+
         runner = web.AppRunner(app)
         await runner.setup()
         site = web.TCPSite(runner, '0.0.0.0', PORT)
         await site.start()
-        logger.info(f"🌐 Сервер на порту {PORT}")
-        logger.info(f"🔗 https://{PUBLIC_DOMAIN}/webhook")
-        logger.info("🤖 Жду обновления...")
-        try:
-            await asyncio.Event().wait()
-        except KeyboardInterrupt:
-            logger.info("🛑 Сигнал остановки")
-        finally:
-            await on_shutdown()
-            await runner.cleanup()
+
+        logger.info(f"🌐 Веб-сервер: {PORT}")
+        logger.info(f"🔗 {PUBLIC_DOMAIN}/webhook")
+        logger.info(f"🎤 Голос: {'ВКЛ' if VOICE_ENABLED else 'ВЫКЛ'}")
+
+        await asyncio.Event().wait()
     else:
-        logger.info("🚀 Локальный запуск")
         await dp.start_polling(bot)
 
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        logger.info("🛑 Бот остановлен")
-    except Exception as e:
-        logger.error(f"💥 Ошибка: {e}", exc_info=True)
+    asyncio.run(main())
