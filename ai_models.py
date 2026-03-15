@@ -44,6 +44,13 @@ class OpenRouterModel:
             "gemma": "google/gemma-2-9b-it",
             "deepseek": "deepseek/deepseek-chat"
         }
+        self.vision_models = {
+            "llama": "meta-llama/llama-3.2-11b-vision-instruct",
+            "mistral": "mistralai/pixtral-12b",
+            "qwen": "qwen/qwen-2.5-7b-instruct",
+            "gemma": "google/gemma-2-9b-it",
+            "deepseek": "deepseek/deepseek-chat"
+        }
 
     def ask(self, prompt, model="mistral", system_prompt=None):
         try:
@@ -74,8 +81,8 @@ class OpenRouterModel:
         except Exception as e:
             return f"❌ Ошибка: {e}"
 
-    def ask_with_image(self, prompt, base64_image, model="mistral"):
-        """Отправляет запрос с изображением (только для моделей, поддерживающих vision)"""
+    def ask_with_image(self, prompt, base64_image, model="llama"):
+        """Отправляет запрос с изображением через OpenRouter"""
         try:
             messages = [
                 {
@@ -95,16 +102,7 @@ class OpenRouterModel:
                 }
             ]
 
-            # Для vision используем специальные модели
-            vision_models = {
-                "llama": "meta-llama/llama-3.2-11b-vision-instruct",
-                "mistral": "mistralai/pixtral-12b",
-                "qwen": "qwen/qwen-2.5-7b-instruct",  # Qwen пока без vision
-                "gemma": "google/gemma-2-9b-it",  # Gemma пока без vision
-                "deepseek": "deepseek/deepseek-chat"  # DeepSeek пока без vision
-            }
-
-            model_name = vision_models.get(model, vision_models["llama"])
+            model_name = self.vision_models.get(model, self.vision_models["llama"])
 
             response = requests.post(
                 url=self.url,
@@ -129,7 +127,7 @@ class OpenRouterModel:
             return f"❌ Ошибка: {e}"
 
 
-# ========== GIGACHAT (твой старый) ==========
+# ========== GIGACHAT ==========
 class GigaChatModel:
     def __init__(self, client_id, client_secret):
         self.client_id = client_id
@@ -139,6 +137,7 @@ class GigaChatModel:
         self.auth_string = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
 
     def _get_access_token(self):
+        """Получение токена доступа к GigaChat"""
         url = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
         rq_uid = str(uuid.uuid4())
         headers = {
@@ -156,11 +155,14 @@ class GigaChatModel:
                 self.access_token = result['access_token']
                 self.token_expires = result['expires_at'] / 1000
                 return True
-        except:
-            return False
+            else:
+                print(f"Ошибка получения токена: {response.status_code} - {response.text}")
+        except Exception as e:
+            print(f"Ошибка получения токена: {e}")
         return False
 
     def ask(self, prompt, system_prompt=None):
+        """Обычный текстовый запрос к GigaChat"""
         if not self.access_token or time.time() > self.token_expires:
             if not self._get_access_token():
                 return "❌ Ошибка подключения к GigaChat"
@@ -193,7 +195,7 @@ class GigaChatModel:
             return f"❌ Ошибка: {e}"
 
     def ask_with_image(self, prompt, image_path):
-        """Отправляет запрос с изображением в GigaChat"""
+        """Запрос к GigaChat с изображением"""
         if not self.access_token or time.time() > self.token_expires:
             if not self._get_access_token():
                 return "❌ Ошибка подключения к GigaChat"
@@ -213,28 +215,24 @@ class GigaChatModel:
             'Authorization': f'Bearer {self.access_token}'
         }
 
-        # Формируем запрос с изображением
+        # Формат для GigaChat с изображением
         data = {
             "model": "GigaChat",
             "messages": [
                 {
                     "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": prompt
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{image_base64}"
-                            }
-                        }
-                    ]
+                    "content": prompt
                 }
             ],
             "temperature": 0.7,
-            "max_tokens": 1000
+            "max_tokens": 1000,
+            "attachments": [
+                {
+                    "type": "image",
+                    "content": image_base64,
+                    "mime_type": "image/jpeg"
+                }
+            ]
         }
 
         try:
@@ -242,14 +240,63 @@ class GigaChatModel:
             response = requests.post(url, headers=headers, json=data, verify=False, timeout=60)
 
             if response.status_code == 200:
-                return response.json()['choices'][0]['message']['content']
+                result = response.json()
+                return result['choices'][0]['message']['content']
             elif response.status_code == 401:
                 # Токен истёк, пробуем ещё раз
+                print("Токен истёк, обновляем...")
                 if self._get_access_token():
                     return self.ask_with_image(prompt, image_path)
                 else:
                     return "❌ Ошибка авторизации GigaChat"
             else:
-                return f"❌ Ошибка GigaChat Vision: {response.status_code}\n{response.text}"
+                error_text = response.text if response.text else "Нет описания"
+                return f"❌ Ошибка GigaChat Vision: {response.status_code}\n{error_text}"
+        except Exception as e:
+            return f"❌ Ошибка при запросе к GigaChat Vision: {e}"
+
+    def ask_with_image_base64(self, prompt, base64_image):
+        """Запрос к GigaChat с изображением в base64 (если изображение уже закодировано)"""
+        if not self.access_token or time.time() > self.token_expires:
+            if not self._get_access_token():
+                return "❌ Ошибка подключения к GigaChat"
+
+        url = "https://gigachat.devices.sberbank.ru/api/v1/chat/completions"
+
+        headers = {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Authorization': f'Bearer {self.access_token}'
+        }
+
+        data = {
+            "model": "GigaChat",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            "temperature": 0.7,
+            "max_tokens": 1000,
+            "attachments": [
+                {
+                    "type": "image",
+                    "content": base64_image,
+                    "mime_type": "image/jpeg"
+                }
+            ]
+        }
+
+        try:
+            requests.packages.urllib3.disable_warnings()
+            response = requests.post(url, headers=headers, json=data, verify=False, timeout=60)
+
+            if response.status_code == 200:
+                result = response.json()
+                return result['choices'][0]['message']['content']
+            else:
+                error_text = response.text if response.text else "Нет описания"
+                return f"❌ Ошибка GigaChat Vision: {response.status_code}\n{error_text}"
         except Exception as e:
             return f"❌ Ошибка при запросе к GigaChat Vision: {e}"
