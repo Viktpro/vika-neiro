@@ -85,16 +85,16 @@ model_names = {
     "gigachat": "🇷🇺 GigaChat",
     "deepseek": "🇨🇳 DeepSeek",
     "mistral": "🇪🇺 Mistral",
-    "llama": "🦙 Llama",
+    "llama": "🦙 Llama (может смотреть фото)",
     "qwen": "🇨🇳 Qwen",
     "gemma": "🇺🇸 Gemma"
 }
 
 model_descriptions = {
-    "gigachat": "🇷🇺 <b>GigaChat</b>\n• От Сбера\n• Лучший русский язык\n• Умеет смотреть фото\n• Бесплатно",
+    "gigachat": "🇷🇺 <b>GigaChat</b>\n• От Сбера\n• Лучший русский язык\n• Бесплатно",
     "deepseek": "🇨🇳 <b>DeepSeek</b>\n• 1 млн токенов бесплатно\n• Очень быстрый\n• Отличный код",
     "mistral": "🇪🇺 <b>Mistral</b>\n• Европейская модель\n• Открытый код\n• Хороша для логики",
-    "llama": "🦙 <b>Llama</b>\n• От Meta\n• Самая популярная\n• 8B параметров",
+    "llama": "🦙 <b>Llama</b>\n• От Meta\n• Самая популярная\n• Умеет смотреть фото!\n• 8B параметров",
     "qwen": "🇨🇳 <b>Qwen</b>\n• От Alibaba\n• 7B параметров\n• Сильная в математике",
     "gemma": "🇺🇸 <b>Gemma</b>\n• От Google\n• 9B параметров\n• Новая технология"
 }
@@ -150,7 +150,8 @@ async def start(message: types.Message):
         f"👋 <b>Привет, {first_name}!</b>\n\n"
         f"🧠 <b>Нейробот Вики</b>\n"
         f"🤖 <b>Модель:</b> {model_display}\n\n"
-        f"📸 <b>Новое:</b> отправь фото - я расскажу, что на нём!\n\n"
+        f"📸 <b>Новая функция:</b> отправь фото - я расскажу, что на нём!\n"
+        f"✨ <i>Рекомендую выбрать модель Llama для лучшего распознавания</i>\n\n"
         f"👇 <b>Выбери режим:</b>",
         parse_mode="HTML",
         reply_markup=keyboard.as_markup()
@@ -181,8 +182,7 @@ async def model_command(message: types.Message):
         else:
             text += f"• {desc}\n\n"
 
-    if current_model == "gigachat":
-        text += "\n📸 <i>GigaChat умеет анализировать фотографии!</i>"
+    text += "\n📸 <i>Для распознавания фото лучше всего подходит Llama</i>"
 
     await message.answer(text, parse_mode="HTML", reply_markup=keyboard.as_markup())
 
@@ -207,7 +207,8 @@ async def help_command(message: types.Message):
         "/random - Случайное число\n"
         "/fact - Интересный факт\n\n"
         "📸 <b>Новая функция:</b>\n"
-        "Просто отправь фото - я расскажу, что на нём изображено!",
+        "Просто отправь фото - я расскажу, что на нём изображено!\n"
+        "<i>Для лучшего результата выбери модель Llama</i>",
         parse_mode="HTML"
     )
 
@@ -344,15 +345,15 @@ async def delnote_command(message: types.Message):
         await message.answer("❌ <b>Номер должен быть числом</b>", parse_mode="HTML")
 
 
-# ========== ОБРАБОТЧИК ФОТОГРАФИЙ (ИСПРАВЛЕННЫЙ) ==========
+# ========== ОБРАБОТЧИК ФОТОГРАФИЙ (ЧЕРЕЗ OPENROUTER) ==========
 @dp.message(lambda message: message.photo is not None)
 async def handle_photo(message: types.Message):
-    """Определяет, что изображено на фото - просто и точно"""
+    """Определяет, что изображено на фото через OpenRouter"""
 
     user_id = message.from_user.id
     logger.info(f"📸 Получено фото от пользователя {user_id}")
 
-    status_msg = await message.answer("🔍 Смотрю на фото...")
+    status_msg = await message.answer("🔍 Анализирую изображение...")
 
     temp_files = []
 
@@ -368,23 +369,34 @@ async def handle_photo(message: types.Message):
             temp_files.append(file_path)
             logger.info(f"✅ Фото скачано: {file_path}")
 
-        await status_msg.edit_text("🔄 Думаю...")
+        await status_msg.edit_text("🔄 Отправляю на распознавание через OpenRouter...")
 
-        # Получаем ответ от GigaChat Vision
+        # Получаем режим пользователя
+        mode = db.get_user_mode(user_id)
+        system_prompt = db.get_prompt(mode) or "Ты полезный ассистент."
+
+        # Определяем, какая модель выбрана
         user_model = user_models.get(user_id, "gigachat")
 
-        if user_model == "gigachat":
-            # Простой и точный промпт
-            prompt = "Что именно изображено на этой фотографии? Назови объекты одним-двумя словами. Без лишних объяснений."
-            response = giga.ask_with_image_simple(prompt, file_path)
-        else:
-            response = "❌ Анализ фото работает только с моделью GigaChat. Выбери её через /model"
+        # Формируем промпт для анализа
+        prompt = "Опиши подробно, что изображено на этой фотографии. Напиши на русском языке. Определи объекты, людей, животных, достопримечательности, еду или что там есть. Будь конкретным и детальным."
 
-        logger.info(f"✅ Ответ: {response}")
+        # Для распознавания фото используем OpenRouter
+        # Если выбрана Llama - используем её, иначе используем Llama по умолчанию
+        vision_model = "llama"  # По умолчанию
+        if user_model in ["llama", "mistral"]:
+            vision_model = user_model
+
+        response = openrouter.ask_with_image(
+            prompt=prompt,
+            image_path=file_path,
+            model=vision_model
+        )
+
+        logger.info(f"✅ Ответ получен")
 
         # Сохраняем в историю
-        mode = db.get_user_mode(user_id)
-        db.save_message(user_id, 'user', f"[фото]", mode)
+        db.save_message(user_id, 'user', f"[фото] Запрос на анализ изображения", mode)
         message_id = db.save_message(user_id, 'assistant', response, mode)
 
         # Кнопки оценки
@@ -394,19 +406,24 @@ async def handle_photo(message: types.Message):
 
         await status_msg.delete()
         await message.answer(
-            f"📸 <b>На фото:</b> {response}",
+            f"📸 <b>Что на фото:</b>\n\n{response}",
             parse_mode="HTML",
             reply_markup=keyboard.as_markup()
         )
 
     except Exception as e:
-        logger.error(f"❌ Ошибка: {e}")
-        await status_msg.edit_text("❌ Не удалось распознать фото. Попробуй ещё раз.")
+        logger.error(f"❌ Ошибка обработки фото: {e}", exc_info=True)
+        await status_msg.edit_text(
+            f"❌ Не удалось проанализировать фото.\n"
+            f"Попробуй другое изображение или отправь текст."
+        )
 
     finally:
+        # Удаляем временные файлы
         for file_path in temp_files:
             try:
                 os.unlink(file_path)
+                logger.info(f"🗑️ Удалён временный файл: {file_path}")
             except:
                 pass
 
@@ -471,7 +488,8 @@ async def callback_handler(callback: types.CallbackQuery):
         model = callback.data.replace("model_", "")
         user_models[user_id] = model
         await callback.message.answer(
-            f"✅ <b>Модель переключена на {model_names.get(model, model)}</b>",
+            f"✅ <b>Модель переключена на {model_names.get(model, model)}</b>\n\n"
+            f"📸 <i>Для распознавания фото лучше всего подходит Llama</i>",
             parse_mode="HTML"
         )
         return
@@ -518,7 +536,7 @@ async def handle_message(message: types.Message):
 
     # Игнорируем голосовые сообщения
     if message.voice:
-        await message.answer("❌ Голосовые сообщения не поддерживаются. Отправь текст или фото.")
+        await message.answer("❌ Голосовые сообщения не поддерживаются. Пожалуйста, отправь текст или фото.")
         return
 
     # Админские состояния
@@ -577,7 +595,7 @@ async def handle_message(message: types.Message):
     keyboard.add(InlineKeyboardButton(text="👍", callback_data=f"like_{message_id}"))
     keyboard.add(InlineKeyboardButton(text="👎", callback_data=f"dislike_{message_id}"))
 
-    photo_hint = "\n\n📸 <i>Можешь отправить фото - я скажу, что на нём!</i>"
+    photo_hint = "\n\n📸 <i>Также ты можешь отправить фото - я расскажу, что на нём!</i>"
 
     await message.answer(
         response + photo_hint,
@@ -620,6 +638,7 @@ async def on_startup():
 
     bot_info = await bot.get_me()
     logger.info(f"🚀 Бот @{bot_info.username} запущен!")
+    logger.info(f"📸 Режим распознавания фото: АКТИВЕН (через OpenRouter)")
 
 
 async def on_shutdown():
