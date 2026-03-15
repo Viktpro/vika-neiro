@@ -8,6 +8,7 @@ import re
 import tempfile
 import os
 import random
+import subprocess
 from datetime import datetime
 from pathlib import Path
 from aiogram import Bot, Dispatcher, types
@@ -55,6 +56,74 @@ ADMIN_IDS = [1467484237, 8249255843]
 print(f"🔑 Токен загружен: {TELEGRAM_TOKEN[:10]}...")
 print(f"🔑 Client ID: {CLIENT_ID[:10]}...")
 
+# ========== ДИАГНОСТИКА FFMPEG ==========
+print("\n🔍 Проверка FFmpeg...")
+try:
+    result = subprocess.run(['ffmpeg', '-version'], capture_output=True, text=True, timeout=5)
+    if result.returncode == 0:
+        ffmpeg_version = result.stdout.split('\n')[0]
+        print(f"✅ FFmpeg установлен: {ffmpeg_version}")
+    else:
+        print("❌ FFmpeg не работает")
+except FileNotFoundError:
+    print("❌ FFmpeg не найден в системе")
+except Exception as e:
+    print(f"❌ Ошибка при проверке FFmpeg: {e}")
+
+# ========== ДИАГНОСТИКА ГОЛОСОВЫХ МОДУЛЕЙ ==========
+print("\n🔍 Проверка голосовых модулей...")
+print(f"📁 Текущая директория: {os.getcwd()}")
+print(f"📁 Содержимое текущей директории: {os.listdir('.')}")
+
+# Проверяем наличие папки voice
+VOICE_ENABLED = False
+stt = None
+tts = None
+
+if os.path.exists('voice'):
+    print(f"✅ Папка voice найдена")
+    print(f"📁 Содержимое voice: {os.listdir('voice')}")
+
+    try:
+        from voice.stt import STT
+
+        print("✅ Модуль voice.stt импортирован")
+
+        from voice.tts import TTS
+
+        print("✅ Модуль voice.tts импортирован")
+
+        VOICE_ENABLED = True
+        print("✅ Все голосовые модули импортированы")
+    except ImportError as e:
+        print(f"❌ Ошибка импорта голосовых модулей: {e}")
+    except Exception as e:
+        print(f"❌ Неожиданная ошибка: {e}")
+else:
+    print("❌ Папка voice НЕ найдена!")
+
+# Инициализация голосовых модулей
+if VOICE_ENABLED:
+    try:
+        print("\n🔧 Инициализация STT...")
+        stt = STT()
+        print("✅ STT инициализирован")
+
+        print("🔧 Инициализация TTS...")
+        tts = TTS()
+        print("✅ TTS инициализирован")
+
+        print("🎉 Голосовые модули ПОЛНОСТЬЮ готовы!")
+    except Exception as e:
+        print(f"❌ Ошибка при инициализации: {e}")
+        VOICE_ENABLED = False
+        import traceback
+
+        traceback.print_exc()
+
+print(f"\n🎤 Итоговый статус голоса: {'ВКЛЮЧЕН' if VOICE_ENABLED else 'ВЫКЛЮЧЕН'}")
+print("=" * 50)
+
 # ========== ИНИЦИАЛИЗАЦИЯ ==========
 admin_states = {}
 db = Database()
@@ -75,26 +144,9 @@ session = AiohttpSession(
 bot = Bot(
     token=TELEGRAM_TOKEN,
     session=session,
-    default=DefaultBotProperties(parse_mode="HTML")  # Меняем на HTML
+    default=DefaultBotProperties(parse_mode="HTML")
 )
 dp = Dispatcher()
-
-# ========== ГОЛОСОВЫЕ МОДУЛИ ==========
-try:
-    from voice.stt import STT
-    from voice.tts import TTS
-
-    VOICE_ENABLED = True
-    try:
-        stt = STT()
-        tts = TTS()
-        print("✅ Голосовые модули инициализированы")
-    except Exception as e:
-        print(f"❌ Ошибка инициализации голоса: {e}")
-        VOICE_ENABLED = False
-except ImportError as e:
-    print(f"⚠️ Голосовые модули не загружены: {e}")
-    VOICE_ENABLED = False
 
 # ========== ИНИЦИАЛИЗАЦИЯ AI-МОДЕЛЕЙ ==========
 giga = GigaChatModel(CLIENT_ID, CLIENT_SECRET)
@@ -172,10 +224,8 @@ async def start(message: types.Message):
     current_model = user_models.get(user_id, "gigachat")
     model_display = model_names.get(current_model, current_model)
 
-    # Обновляем статус голоса - теперь он должен быть включён
     voice_status = "🎤 Голос активен" if VOICE_ENABLED else "⚠️ Голос отключен"
 
-    # Используем HTML форматирование для красивого текста
     await message.answer(
         f"👋 <b>Привет, {first_name}!</b>\n\n"
         f"🧠 <b>Нейробот Вики</b>\n"
@@ -292,7 +342,7 @@ async def clear_command(message: types.Message):
 
 @dp.message(Command("voice_ru"))
 async def voice_ru(message: types.Message):
-    if VOICE_ENABLED:
+    if VOICE_ENABLED and tts:
         tts.set_language('ru')
         await message.answer("✅ Голос переключён на <b>русский</b>", parse_mode="HTML")
     else:
@@ -301,7 +351,7 @@ async def voice_ru(message: types.Message):
 
 @dp.message(Command("voice_en"))
 async def voice_en(message: types.Message):
-    if VOICE_ENABLED:
+    if VOICE_ENABLED and tts:
         tts.set_language('en')
         await message.answer("✅ Голос переключён на <b>английский</b>", parse_mode="HTML")
     else:
@@ -396,7 +446,7 @@ async def delnote_command(message: types.Message):
 async def voice_message_handler(message: types.Message):
     """Обработчик голосовых сообщений"""
 
-    if not VOICE_ENABLED:
+    if not VOICE_ENABLED or not stt or not tts:
         await message.answer("❌ Голосовой режим временно недоступен. Отправь текст.")
         return
 
