@@ -344,15 +344,15 @@ async def delnote_command(message: types.Message):
         await message.answer("❌ <b>Номер должен быть числом</b>", parse_mode="HTML")
 
 
-# ========== ОБРАБОТЧИК ФОТОГРАФИЙ (НОВАЯ ФУНКЦИЯ) ==========
+# ========== ОБРАБОТЧИК ФОТОГРАФИЙ (ИСПРАВЛЕННЫЙ) ==========
 @dp.message(lambda message: message.photo is not None)
 async def handle_photo(message: types.Message):
-    """Определяет, что изображено на фото"""
+    """Определяет, что изображено на фото - просто и точно"""
 
     user_id = message.from_user.id
     logger.info(f"📸 Получено фото от пользователя {user_id}")
 
-    status_msg = await message.answer("🔍 Анализирую изображение...")
+    status_msg = await message.answer("🔍 Смотрю на фото...")
 
     temp_files = []
 
@@ -368,27 +368,23 @@ async def handle_photo(message: types.Message):
             temp_files.append(file_path)
             logger.info(f"✅ Фото скачано: {file_path}")
 
-        await status_msg.edit_text("🔄 Обрабатываю изображение...")
+        await status_msg.edit_text("🔄 Думаю...")
 
-        # Получаем системный промпт для режима
-        mode = db.get_user_mode(user_id)
-        system_prompt = db.get_prompt(mode) or "Ты полезный ассистент."
-
-        # Получаем ответ от AI-модели
+        # Получаем ответ от GigaChat Vision
         user_model = user_models.get(user_id, "gigachat")
 
-        # Для GigaChat используем vision
         if user_model == "gigachat":
-            prompt = f"Опиши, что изображено на этой фотографии. Напиши подробно, но кратко (3-5 предложений). Определи объекты, людей, животных, достопримечательности, еду или что там есть."
-            response = giga.ask_with_image(prompt, file_path)
+            # Простой и точный промпт
+            prompt = "Что именно изображено на этой фотографии? Назови объекты одним-двумя словами. Без лишних объяснений."
+            response = giga.ask_with_image_simple(prompt, file_path)
         else:
-            # Для других моделей пока нет поддержки vision
-            response = "❌ Анализ фотографий пока доступен только в режиме GigaChat. Пожалуйста, выбери модель GigaChat через /model"
+            response = "❌ Анализ фото работает только с моделью GigaChat. Выбери её через /model"
 
-        logger.info(f"✅ Ответ получен, длина: {len(response)} символов")
+        logger.info(f"✅ Ответ: {response}")
 
         # Сохраняем в историю
-        db.save_message(user_id, 'user', f"[фото] Запрос на анализ изображения", mode)
+        mode = db.get_user_mode(user_id)
+        db.save_message(user_id, 'user', f"[фото]", mode)
         message_id = db.save_message(user_id, 'assistant', response, mode)
 
         # Кнопки оценки
@@ -398,24 +394,19 @@ async def handle_photo(message: types.Message):
 
         await status_msg.delete()
         await message.answer(
-            f"📸 <b>Что на фото:</b>\n\n{response}",
+            f"📸 <b>На фото:</b> {response}",
             parse_mode="HTML",
             reply_markup=keyboard.as_markup()
         )
 
     except Exception as e:
-        logger.error(f"❌ Ошибка обработки фото: {e}", exc_info=True)
-        await status_msg.edit_text(
-            f"❌ Не удалось проанализировать фото.\n"
-            f"Попробуй другое изображение или отправь текст."
-        )
+        logger.error(f"❌ Ошибка: {e}")
+        await status_msg.edit_text("❌ Не удалось распознать фото. Попробуй ещё раз.")
 
     finally:
-        # Удаляем временные файлы
         for file_path in temp_files:
             try:
                 os.unlink(file_path)
-                logger.info(f"🗑️ Удалён временный файл: {file_path}")
             except:
                 pass
 
@@ -527,7 +518,7 @@ async def handle_message(message: types.Message):
 
     # Игнорируем голосовые сообщения
     if message.voice:
-        await message.answer("❌ Голосовые сообщения не поддерживаются. Пожалуйста, отправь текст или фото.")
+        await message.answer("❌ Голосовые сообщения не поддерживаются. Отправь текст или фото.")
         return
 
     # Админские состояния
@@ -586,7 +577,7 @@ async def handle_message(message: types.Message):
     keyboard.add(InlineKeyboardButton(text="👍", callback_data=f"like_{message_id}"))
     keyboard.add(InlineKeyboardButton(text="👎", callback_data=f"dislike_{message_id}"))
 
-    photo_hint = "\n\n📸 <i>Также ты можешь отправить фото - я расскажу, что на нём!</i>"
+    photo_hint = "\n\n📸 <i>Можешь отправить фото - я скажу, что на нём!</i>"
 
     await message.answer(
         response + photo_hint,
@@ -629,7 +620,6 @@ async def on_startup():
 
     bot_info = await bot.get_me()
     logger.info(f"🚀 Бот @{bot_info.username} запущен!")
-    logger.info(f"📸 Режим распознавания фото: АКТИВЕН (для GigaChat)")
 
 
 async def on_shutdown():
