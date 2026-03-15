@@ -91,7 +91,7 @@ model_names = {
 }
 
 model_descriptions = {
-    "gigachat": "🇷🇺 <b>GigaChat</b>\n• От Сбера\n• Лучший русский язык\n• Бесплатно",
+    "gigachat": "🇷🇺 <b>GigaChat</b>\n• От Сбера\n• Лучший русский язык\n• Умеет смотреть фото\n• Бесплатно",
     "deepseek": "🇨🇳 <b>DeepSeek</b>\n• 1 млн токенов бесплатно\n• Очень быстрый\n• Отличный код",
     "mistral": "🇪🇺 <b>Mistral</b>\n• Европейская модель\n• Открытый код\n• Хороша для логики",
     "llama": "🦙 <b>Llama</b>\n• От Meta\n• Самая популярная\n• 8B параметров",
@@ -107,6 +107,7 @@ FACTS = [
     "🎮 Самой продаваемой видеоигрой в истории является Minecraft.",
     "🌐 Первый веб-сайт в мире до сих пор работает: info.cern.ch",
 ]
+
 
 def is_admin(user_id):
     return str(user_id) in [str(admin_id) for admin_id in ADMIN_IDS]
@@ -149,6 +150,7 @@ async def start(message: types.Message):
         f"👋 <b>Привет, {first_name}!</b>\n\n"
         f"🧠 <b>Нейробот Вики</b>\n"
         f"🤖 <b>Модель:</b> {model_display}\n\n"
+        f"📸 <b>Новое:</b> отправь фото - я расскажу, что на нём!\n\n"
         f"👇 <b>Выбери режим:</b>",
         parse_mode="HTML",
         reply_markup=keyboard.as_markup()
@@ -179,6 +181,9 @@ async def model_command(message: types.Message):
         else:
             text += f"• {desc}\n\n"
 
+    if current_model == "gigachat":
+        text += "\n📸 <i>GigaChat умеет анализировать фотографии!</i>"
+
     await message.answer(text, parse_mode="HTML", reply_markup=keyboard.as_markup())
 
 
@@ -200,7 +205,9 @@ async def help_command(message: types.Message):
         "🔧 <b>Полезные:</b>\n"
         "/time - Текущее время\n"
         "/random - Случайное число\n"
-        "/fact - Интересный факт",
+        "/fact - Интересный факт\n\n"
+        "📸 <b>Новая функция:</b>\n"
+        "Просто отправь фото - я расскажу, что на нём изображено!",
         parse_mode="HTML"
     )
 
@@ -337,6 +344,82 @@ async def delnote_command(message: types.Message):
         await message.answer("❌ <b>Номер должен быть числом</b>", parse_mode="HTML")
 
 
+# ========== ОБРАБОТЧИК ФОТОГРАФИЙ (НОВАЯ ФУНКЦИЯ) ==========
+@dp.message(lambda message: message.photo is not None)
+async def handle_photo(message: types.Message):
+    """Определяет, что изображено на фото"""
+
+    user_id = message.from_user.id
+    logger.info(f"📸 Получено фото от пользователя {user_id}")
+
+    status_msg = await message.answer("🔍 Анализирую изображение...")
+
+    temp_files = []
+
+    try:
+        # Получаем фото (самое большое качество)
+        photo = message.photo[-1]
+        file = await message.bot.get_file(photo.file_id)
+
+        # Скачиваем
+        with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp_file:
+            file_path = tmp_file.name
+            await message.bot.download_file(file.file_path, file_path)
+            temp_files.append(file_path)
+            logger.info(f"✅ Фото скачано: {file_path}")
+
+        await status_msg.edit_text("🔄 Обрабатываю изображение...")
+
+        # Получаем системный промпт для режима
+        mode = db.get_user_mode(user_id)
+        system_prompt = db.get_prompt(mode) or "Ты полезный ассистент."
+
+        # Получаем ответ от AI-модели
+        user_model = user_models.get(user_id, "gigachat")
+
+        # Для GigaChat используем vision
+        if user_model == "gigachat":
+            prompt = f"Опиши, что изображено на этой фотографии. Напиши подробно, но кратко (3-5 предложений). Определи объекты, людей, животных, достопримечательности, еду или что там есть."
+            response = giga.ask_with_image(prompt, file_path)
+        else:
+            # Для других моделей пока нет поддержки vision
+            response = "❌ Анализ фотографий пока доступен только в режиме GigaChat. Пожалуйста, выбери модель GigaChat через /model"
+
+        logger.info(f"✅ Ответ получен, длина: {len(response)} символов")
+
+        # Сохраняем в историю
+        db.save_message(user_id, 'user', f"[фото] Запрос на анализ изображения", mode)
+        message_id = db.save_message(user_id, 'assistant', response, mode)
+
+        # Кнопки оценки
+        keyboard = InlineKeyboardBuilder()
+        keyboard.add(InlineKeyboardButton(text="👍", callback_data=f"like_{message_id}"))
+        keyboard.add(InlineKeyboardButton(text="👎", callback_data=f"dislike_{message_id}"))
+
+        await status_msg.delete()
+        await message.answer(
+            f"📸 <b>Что на фото:</b>\n\n{response}",
+            parse_mode="HTML",
+            reply_markup=keyboard.as_markup()
+        )
+
+    except Exception as e:
+        logger.error(f"❌ Ошибка обработки фото: {e}", exc_info=True)
+        await status_msg.edit_text(
+            f"❌ Не удалось проанализировать фото.\n"
+            f"Попробуй другое изображение или отправь текст."
+        )
+
+    finally:
+        # Удаляем временные файлы
+        for file_path in temp_files:
+            try:
+                os.unlink(file_path)
+                logger.info(f"🗑️ Удалён временный файл: {file_path}")
+            except:
+                pass
+
+
 # ========== ОБРАБОТЧИК КНОПОК ==========
 
 @dp.callback_query()
@@ -444,7 +527,7 @@ async def handle_message(message: types.Message):
 
     # Игнорируем голосовые сообщения
     if message.voice:
-        await message.answer("❌ Голосовые сообщения не поддерживаются. Пожалуйста, отправь текст.")
+        await message.answer("❌ Голосовые сообщения не поддерживаются. Пожалуйста, отправь текст или фото.")
         return
 
     # Админские состояния
@@ -503,8 +586,10 @@ async def handle_message(message: types.Message):
     keyboard.add(InlineKeyboardButton(text="👍", callback_data=f"like_{message_id}"))
     keyboard.add(InlineKeyboardButton(text="👎", callback_data=f"dislike_{message_id}"))
 
+    photo_hint = "\n\n📸 <i>Также ты можешь отправить фото - я расскажу, что на нём!</i>"
+
     await message.answer(
-        response,
+        response + photo_hint,
         parse_mode="HTML",
         reply_markup=keyboard.as_markup()
     )
@@ -544,6 +629,7 @@ async def on_startup():
 
     bot_info = await bot.get_me()
     logger.info(f"🚀 Бот @{bot_info.username} запущен!")
+    logger.info(f"📸 Режим распознавания фото: АКТИВЕН (для GigaChat)")
 
 
 async def on_shutdown():
