@@ -8,6 +8,7 @@ import re
 import tempfile
 import os
 import random
+import sys
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -22,56 +23,105 @@ from aiohttp import web
 from database import Database
 from ai_models import DeepSeekModel, OpenRouterModel, GigaChatModel
 
-# ========== ПРИНУДИТЕЛЬНОЕ ВКЛЮЧЕНИЕ ГОЛОСА ==========
-print("=" * 50)
-print("🔧 ПРИНУДИТЕЛЬНАЯ ИНИЦИАЛИЗАЦИЯ ГОЛОСОВЫХ МОДУЛЕЙ")
-print("=" * 50)
+# ========== ПРИНУДИТЕЛЬНАЯ ДИАГНОСТИКА И ИНИЦИАЛИЗАЦИЯ ==========
+print("\n" + "=" * 70)
+print("🔧 ПРИНУДИТЕЛЬНАЯ ДИАГНОСТИКА ГОЛОСОВЫХ МОДУЛЕЙ")
+print("=" * 70)
+
+# Информация о системе
+print(f"\n📌 Python версия: {sys.version}")
+print(f"📌 Текущая директория: {os.getcwd()}")
+print(f"📌 Содержимое текущей директории: {os.listdir('.')}")
+
+# Проверка наличия папки voice
+print("\n📁 ПРОВЕРКА ПАПКИ VOICE:")
+if os.path.exists('voice'):
+    print(f"  ✅ Папка voice найдена")
+    print(f"  📄 Содержимое: {os.listdir('voice')}")
+
+    # Проверяем наличие необходимых файлов
+    voice_files = os.listdir('voice')
+    required_files = ['stt.py', 'tts.py', '__init__.py']
+    for file in required_files:
+        if file in voice_files:
+            print(f"  ✅ {file} - найден")
+        else:
+            print(f"  ❌ {file} - ОТСУТСТВУЕТ!")
+else:
+    print(f"  ❌ Папка voice НЕ НАЙДЕНА!")
+
+# Проверка установленных пакетов
+print("\n📦 ПРОВЕРКА УСТАНОВЛЕННЫХ ПАКЕТОВ:")
+packages = ['vosk', 'soundfile', 'gtts', 'pydub', 'aiohttp', 'aiogram']
+for package in packages:
+    try:
+        pkg = __import__(package)
+        if hasattr(pkg, '__version__'):
+            print(f"  ✅ {package} - {pkg.__version__}")
+        else:
+            print(f"  ✅ {package} - установлен")
+    except ImportError:
+        print(f"  ❌ {package} - НЕ УСТАНОВЛЕН")
+
+# Проверка наличия ffmpeg
+print("\n🎬 ПРОВЕРКА FFMPEG:")
+try:
+    result = subprocess.run(['ffmpeg', '-version'], capture_output=True, text=True, timeout=5)
+    if result.returncode == 0:
+        version = result.stdout.split('\n')[0]
+        print(f"  ✅ FFmpeg найден: {version}")
+    else:
+        print(f"  ❌ FFmpeg не работает")
+except FileNotFoundError:
+    print(f"  ❌ FFmpeg не установлен")
+except Exception as e:
+    print(f"  ❌ Ошибка при проверке FFmpeg: {e}")
+
+# ПРИНУДИТЕЛЬНАЯ ИНИЦИАЛИЗАЦИЯ ГОЛОСОВЫХ МОДУЛЕЙ
+print("\n🔧 ПРИНУДИТЕЛЬНАЯ ИНИЦИАЛИЗАЦИЯ ГОЛОСОВЫХ МОДУЛЕЙ:")
+
+# Добавляем текущую папку в путь поиска
+sys.path.insert(0, os.getcwd())
+print(f"  ✅ Путь поиска дополнен: {os.getcwd()}")
 
 # Глобальные переменные для голоса
 stt = None
 tts = None
 VOICE_ENABLED = False
 
-# Проверяем наличие папки voice
-if os.path.exists('voice'):
-    print(f"✅ Папка voice найдена")
-    print(f"📁 Содержимое: {os.listdir('voice')}")
+try:
+    # Прямой импорт без проверок
+    print("\n  📥 Импорт STT...")
+    from voice.stt import STT
 
-    try:
-        # Добавляем текущую папку в путь поиска
-        import sys
+    print("  ✅ STT импортирован")
 
-        sys.path.insert(0, os.getcwd())
+    print("  📥 Импорт TTS...")
+    from voice.tts import TTS
 
-        # Импортируем модули
-        from voice.stt import STT
-        from voice.tts import TTS
+    print("  ✅ TTS импортирован")
 
-        print("✅ Модули STT и TTS импортированы")
+    # Принудительная инициализация
+    print("\n  🔧 Инициализация STT...")
+    stt = STT()
+    print("  ✅ STT инициализирован")
 
-        # Инициализируем
-        try:
-            stt = STT()
-            print("✅ STT инициализирован")
+    print("  🔧 Инициализация TTS...")
+    tts = TTS()
+    print("  ✅ TTS инициализирован")
 
-            tts = TTS()
-            print("✅ TTS инициализирован")
+    VOICE_ENABLED = True
+    print("\n🎉 ГОЛОСОВЫЕ МОДУЛИ УСПЕШНО ИНИЦИАЛИЗИРОВАНЫ!")
 
-            VOICE_ENABLED = True
-            print("🎉 Голосовые модули ПОЛНОСТЬЮ ГОТОВЫ!")
-        except Exception as e:
-            print(f"❌ Ошибка при инициализации: {e}")
-            import traceback
+except Exception as e:
+    print(f"\n❌ ОШИБКА ПРИ ИНИЦИАЛИЗАЦИИ: {e}")
+    import traceback
 
-            traceback.print_exc()
-    except Exception as e:
-        print(f"❌ Ошибка при импорте: {e}")
-else:
-    print(f"❌ Папка voice не найдена в {os.getcwd()}")
-    print(f"📁 Доступные папки: {[f for f in os.listdir('.') if os.path.isdir(f)]}")
+    traceback.print_exc()
+    VOICE_ENABLED = False
 
-print(f"🎤 Итоговый статус голоса: {'ВКЛЮЧЕН' if VOICE_ENABLED else 'ВЫКЛЮЧЕН'}")
-print("=" * 50)
+print(f"\n🎤 ИТОГОВЫЙ СТАТУС ГОЛОСА: {'ВКЛЮЧЕН' if VOICE_ENABLED else 'ВЫКЛЮЧЕН'}")
+print("=" * 70 + "\n")
 
 # ========== ОПРЕДЕЛЕНИЕ СРЕДЫ ==========
 # Определяем, на Render ли мы
@@ -207,7 +257,6 @@ async def start(message: types.Message):
     current_model = user_models.get(user_id, "gigachat")
     model_display = model_names.get(current_model, current_model)
 
-    # Используем принудительно включённый статус голоса
     voice_status = "🎤 Голос активен" if VOICE_ENABLED else "⚠️ Голос отключен"
 
     await message.answer(
