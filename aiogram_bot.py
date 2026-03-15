@@ -75,7 +75,7 @@ session = AiohttpSession(
 bot = Bot(
     token=TELEGRAM_TOKEN,
     session=session,
-    default=DefaultBotProperties(parse_mode="Markdown")
+    default=DefaultBotProperties(parse_mode="HTML")  # Меняем на HTML
 )
 dp = Dispatcher()
 
@@ -115,12 +115,12 @@ model_names = {
 }
 
 model_descriptions = {
-    "gigachat": "🇷🇺 **GigaChat**\n• От Сбера\n• Лучший русский язык\n• Бесплатно",
-    "deepseek": "🇨🇳 **DeepSeek**\n• 1 млн токенов бесплатно\n• Очень быстрый\n• Отличный код",
-    "mistral": "🇪🇺 **Mistral**\n• Европейская модель\n• Открытый код\n• Хороша для логики",
-    "llama": "🦙 **Llama**\n• От Meta\n• Самая популярная\n• 8B параметров",
-    "qwen": "🇨🇳 **Qwen**\n• От Alibaba\n• 7B параметров\n• Сильная в математике",
-    "gemma": "🇺🇸 **Gemma**\n• От Google\n• 9B параметров\n• Новая технология"
+    "gigachat": "🇷🇺 <b>GigaChat</b>\n• От Сбера\n• Лучший русский язык\n• Бесплатно",
+    "deepseek": "🇨🇳 <b>DeepSeek</b>\n• 1 млн токенов бесплатно\n• Очень быстрый\n• Отличный код",
+    "mistral": "🇪🇺 <b>Mistral</b>\n• Европейская модель\n• Открытый код\n• Хороша для логики",
+    "llama": "🦙 <b>Llama</b>\n• От Meta\n• Самая популярная\n• 8B параметров",
+    "qwen": "🇨🇳 <b>Qwen</b>\n• От Alibaba\n• 7B параметров\n• Сильная в математике",
+    "gemma": "🇺🇸 <b>Gemma</b>\n• От Google\n• 9B параметров\n• Новая технология"
 }
 
 # ========== ИНТЕРЕСНЫЕ ФАКТЫ ==========
@@ -171,15 +171,18 @@ async def start(message: types.Message):
 
     current_model = user_models.get(user_id, "gigachat")
     model_display = model_names.get(current_model, current_model)
+
+    # Обновляем статус голоса - теперь он должен быть включён
     voice_status = "🎤 Голос активен" if VOICE_ENABLED else "⚠️ Голос отключен"
 
+    # Используем HTML форматирование для красивого текста
     await message.answer(
-        f"👋 **Привет, {first_name}!**\n\n"
-        f"🧠 **Нейробот Вики**\n"
-        f"🤖 **Модель:** {model_display}\n"
+        f"👋 <b>Привет, {first_name}!</b>\n\n"
+        f"🧠 <b>Нейробот Вики</b>\n"
+        f"🤖 <b>Модель:</b> {model_display}\n"
         f"{voice_status}\n\n"
-        f"👇 **Выбери режим:**",
-        parse_mode="Markdown",
+        f"👇 <b>Выбери режим:</b>",
+        parse_mode="HTML",
         reply_markup=keyboard.as_markup()
     )
 
@@ -198,9 +201,9 @@ async def model_command(message: types.Message):
     current_model = user_models.get(message.from_user.id, "gigachat")
     current_display = model_names.get(current_model, current_model)
 
-    text = f"🤖 **Выбери AI-модель:**\n\n"
-    text += f"🔹 **Сейчас выбрана:** {current_display}\n\n"
-    text += "**Что умеют модели:**\n\n"
+    text = f"🤖 <b>Выбери AI-модель:</b>\n\n"
+    text += f"🔹 <b>Сейчас выбрана:</b> {current_display}\n\n"
+    text += "<b>Что умеют модели:</b>\n\n"
 
     for model_key, desc in model_descriptions.items():
         if model_key == current_model:
@@ -208,33 +211,33 @@ async def model_command(message: types.Message):
         else:
             text += f"• {desc}\n\n"
 
-    await message.answer(text, parse_mode="Markdown", reply_markup=keyboard.as_markup())
+    await message.answer(text, parse_mode="HTML", reply_markup=keyboard.as_markup())
 
 
 @dp.message(Command("help"))
 async def help_command(message: types.Message):
     await message.answer(
-        "🤖 **Доступные команды:**\n\n"
-        "📌 **Основные:**\n"
+        "🤖 <b>Доступные команды:</b>\n\n"
+        "📌 <b>Основные:</b>\n"
         "/start - Главное меню\n"
         "/help - Эта справка\n"
         "/stats - Твоя статистика\n"
         "/clear - Сбросить диалог\n\n"
-        "📝 **Заметки:**\n"
+        "📝 <b>Заметки:</b>\n"
         "/note текст - сохранить заметку\n"
         "/notes - показать заметки\n"
         "/delnote номер - удалить заметку\n\n"
-        "🤖 **AI-модели:**\n"
+        "🤖 <b>AI-модели:</b>\n"
         "/model - Выбрать нейросеть\n\n"
-        "🔧 **Полезные:**\n"
+        "🔧 <b>Полезные:</b>\n"
         "/time - Текущее время\n"
         "/random - Случайное число\n"
         "/fact - Интересный факт\n\n"
-        "🎤 **Голос:**\n"
+        "🎤 <b>Голос:</b>\n"
         "/voice_ru - Русский голос\n"
         "/voice_en - Английский голос\n"
         "Или просто отправь голосовое сообщение!",
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
 
 
@@ -242,9 +245,9 @@ async def help_command(message: types.Message):
 async def time_command(message: types.Message):
     now = datetime.now()
     await message.answer(
-        f"📅 **Сегодня:** {now.strftime('%d.%m.%Y')}\n"
-        f"⏰ **Точное время:** {now.strftime('%H:%M:%S')}",
-        parse_mode="Markdown"
+        f"📅 <b>Сегодня:</b> {now.strftime('%d.%m.%Y')}\n"
+        f"⏰ <b>Точное время:</b> {now.strftime('%H:%M:%S')}",
+        parse_mode="HTML"
     )
 
 
@@ -256,53 +259,53 @@ async def random_command(message: types.Message):
             min_num = int(args[1])
             max_num = int(args[2])
             number = random.randint(min_num, max_num)
-            await message.answer(f"🎲 **Случайное число от {min_num} до {max_num}:** {number}")
+            await message.answer(f"🎲 <b>Случайное число от {min_num} до {max_num}:</b> {number}", parse_mode="HTML")
         except:
-            await message.answer("❌ Используй: /random мин макс")
+            await message.answer("❌ Используй: /random мин макс", parse_mode="HTML")
     else:
         number = random.randint(1, 100)
-        await message.answer(f"🎲 **Случайное число:** {number}")
+        await message.answer(f"🎲 <b>Случайное число:</b> {number}", parse_mode="HTML")
 
 
 @dp.message(Command("fact"))
 async def fact_command(message: types.Message):
     fact = random.choice(FACTS)
-    await message.answer(f"🔮 **Интересный факт:**\n\n{fact}", parse_mode="Markdown")
+    await message.answer(f"🔮 <b>Интересный факт:</b>\n\n{fact}", parse_mode="HTML")
 
 
 @dp.message(Command("stats"))
 async def stats_command(message: types.Message):
     stats = db.get_user_stats(message.from_user.id)
     await message.answer(
-        f"📊 **Твоя статистика:**\n\n"
+        f"📊 <b>Твоя статистика:</b>\n\n"
         f"• Сообщений: {stats['messages']}\n"
         f"• 👍 Лайков: {stats['likes']}\n"
         f"• 👎 Дизлайков: {stats['dislikes']}",
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
 
 
 @dp.message(Command("clear"))
 async def clear_command(message: types.Message):
-    await message.answer("✅ Диалог сброшен. /start")
+    await message.answer("✅ Диалог сброшен. /start", parse_mode="HTML")
 
 
 @dp.message(Command("voice_ru"))
 async def voice_ru(message: types.Message):
     if VOICE_ENABLED:
         tts.set_language('ru')
-        await message.answer("✅ Голос переключён на **русский**", parse_mode="Markdown")
+        await message.answer("✅ Голос переключён на <b>русский</b>", parse_mode="HTML")
     else:
-        await message.answer("❌ Голосовой режим недоступен")
+        await message.answer("❌ Голосовой режим недоступен", parse_mode="HTML")
 
 
 @dp.message(Command("voice_en"))
 async def voice_en(message: types.Message):
     if VOICE_ENABLED:
         tts.set_language('en')
-        await message.answer("✅ Голос переключён на **английский**", parse_mode="Markdown")
+        await message.answer("✅ Голос переключён на <b>английский</b>", parse_mode="HTML")
     else:
-        await message.answer("❌ Голосовой режим недоступен")
+        await message.answer("❌ Голосовой режим недоступен", parse_mode="HTML")
 
 
 @dp.message(Command("cancel"))
@@ -316,9 +319,9 @@ async def cancel_command(message: types.Message):
             cancelled = True
 
     if cancelled:
-        await message.answer("✅ Действие отменено. /start")
+        await message.answer("✅ Действие отменено. /start", parse_mode="HTML")
     else:
-        await message.answer("❌ Нет активных действий для отмены")
+        await message.answer("❌ Нет активных действий для отмены", parse_mode="HTML")
 
 
 # ========== ЗАМЕТКИ ==========
@@ -328,11 +331,11 @@ async def note_command(message: types.Message):
     text = message.text.replace("/note", "", 1).strip()
     if not text:
         await message.answer(
-            "📝 **Как пользоваться заметками:**\n\n"
+            "📝 <b>Как пользоваться заметками:</b>\n\n"
             "/note текст - сохранить заметку\n"
             "/notes - показать заметки\n"
             "/delnote номер - удалить заметку",
-            parse_mode="Markdown"
+            parse_mode="HTML"
         )
         return
 
@@ -340,10 +343,10 @@ async def note_command(message: types.Message):
     note_id = db.save_note(user_id, text)
 
     await message.answer(
-        f"✅ **Заметка сохранена!**\n\n"
+        f"✅ <b>Заметка сохранена!</b>\n\n"
         f"📝 {text}\n\n"
         f"📌 Номер: {note_id}",
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
 
 
@@ -354,26 +357,26 @@ async def notes_command(message: types.Message):
 
     if not notes:
         await message.answer(
-            "📭 **У тебя пока нет заметок**\n\n"
+            "📭 <b>У тебя пока нет заметок</b>\n\n"
             "/note текст - создать заметку",
-            parse_mode="Markdown"
+            parse_mode="HTML"
         )
         return
 
-    text = "📝 **Твои заметки:**\n\n"
+    text = "📝 <b>Твои заметки:</b>\n\n"
     for note in notes[:10]:
         created = note['created_at'][:16] if note['created_at'] else ""
-        text += f"📌 `{note['note']}`\n"
+        text += f"📌 <code>{note['note']}</code>\n"
         text += f"   🆔 {note['id']} | {created}\n\n"
 
-    await message.answer(text, parse_mode="Markdown")
+    await message.answer(text, parse_mode="HTML")
 
 
 @dp.message(Command("delnote"))
 async def delnote_command(message: types.Message):
     args = message.text.split()
     if len(args) < 2:
-        await message.answer("❌ **Укажи номер заметки**\n\nПример: /delnote 5", parse_mode="Markdown")
+        await message.answer("❌ <b>Укажи номер заметки</b>\n\nПример: /delnote 5", parse_mode="HTML")
         return
 
     try:
@@ -381,11 +384,11 @@ async def delnote_command(message: types.Message):
         user_id = message.from_user.id
 
         if db.delete_note(note_id, user_id):
-            await message.answer(f"✅ **Заметка {note_id} удалена**", parse_mode="Markdown")
+            await message.answer(f"✅ <b>Заметка {note_id} удалена</b>", parse_mode="HTML")
         else:
-            await message.answer(f"❌ **Заметка {note_id} не найдена**", parse_mode="Markdown")
+            await message.answer(f"❌ <b>Заметка {note_id} не найдена</b>", parse_mode="HTML")
     except ValueError:
-        await message.answer("❌ **Номер должен быть числом**", parse_mode="Markdown")
+        await message.answer("❌ <b>Номер должен быть числом</b>", parse_mode="HTML")
 
 
 # ========== ОБРАБОТЧИК ГОЛОСОВЫХ СООБЩЕНИЙ ==========
@@ -431,9 +434,9 @@ async def voice_message_handler(message: types.Message):
 
         # Показываем распознанный текст
         await status_msg.edit_text(
-            f"📝 **Распознано:**\n{recognized_text}\n\n"
+            f"📝 <b>Распознано:</b>\n{recognized_text}\n\n"
             f"🤔 Думаю...",
-            parse_mode="Markdown"
+            parse_mode="HTML"
         )
 
         db.save_message(user_id, 'user', f"[голосовое] {recognized_text}", mode)
@@ -476,8 +479,8 @@ async def voice_message_handler(message: types.Message):
 
             await message.answer_voice(
                 voice=voice_file,
-                caption="_Голосовой ответ сгенерирован_",
-                parse_mode="Markdown"
+                caption="<i>Голосовой ответ сгенерирован</i>",
+                parse_mode="HTML"
             )
             logger.info("✅ Голосовое сообщение отправлено")
 
@@ -487,8 +490,8 @@ async def voice_message_handler(message: types.Message):
             keyboard.add(InlineKeyboardButton(text="👎", callback_data=f"dislike_{message_id}"))
 
             await message.answer(
-                response + "\n\n_Оцени ответ, пожалуйста:_",
-                parse_mode="Markdown",
+                response + "\n\n<i>Оцени ответ, пожалуйста:</i>",
+                parse_mode="HTML",
                 reply_markup=keyboard.as_markup()
             )
 
@@ -496,8 +499,8 @@ async def voice_message_handler(message: types.Message):
         else:
             logger.error("❌ Не удалось сгенерировать голос")
             await status_msg.edit_text(
-                response + "\n\n_(не удалось создать голос, ответ текстом)_",
-                parse_mode="Markdown"
+                response + "\n\n(не удалось создать голос, ответ текстом)",
+                parse_mode="HTML"
             )
 
     except Exception as e:
@@ -532,8 +535,8 @@ async def callback_handler(callback: types.CallbackQuery):
         message_id = int(parts[1])
         db.save_feedback(user_id, message_id, rating)
         await callback.message.edit_text(
-            callback.message.text.replace("\n\n_Оцени ответ, пожалуйста:_", ""),
-            parse_mode="Markdown"
+            callback.message.text.replace("\n\n<i>Оцени ответ, пожалуйста:</i>", ""),
+            parse_mode="HTML"
         )
         return
 
@@ -551,9 +554,9 @@ async def callback_handler(callback: types.CallbackQuery):
         keyboard.adjust(1)
 
         await callback.message.edit_text(
-            "📝 **Записной блокнот**\n\n"
+            "📝 <b>Записной блокнот</b>\n\n"
             "Здесь ты можешь хранить свои заметки.",
-            parse_mode="Markdown",
+            parse_mode="HTML",
             reply_markup=keyboard.as_markup()
         )
         return
@@ -564,9 +567,9 @@ async def callback_handler(callback: types.CallbackQuery):
 
     if callback.data == "notes_add":
         await callback.message.answer(
-            "📝 **Напиши текст заметки**\n"
+            "📝 <b>Напиши текст заметки</b>\n"
             "Используй команду /note текст",
-            parse_mode="Markdown"
+            parse_mode="HTML"
         )
         return
 
@@ -580,8 +583,8 @@ async def callback_handler(callback: types.CallbackQuery):
         model = callback.data.replace("model_", "")
         user_models[user_id] = model
         await callback.message.answer(
-            f"✅ **Модель переключена на {model_names.get(model, model)}**",
-            parse_mode="Markdown"
+            f"✅ <b>Модель переключена на {model_names.get(model, model)}</b>",
+            parse_mode="HTML"
         )
         return
 
@@ -590,8 +593,8 @@ async def callback_handler(callback: types.CallbackQuery):
         mode = callback.data.replace("mode_", "")
         db.set_user_mode(user_id, mode, username, first_name, last_name)
         await callback.message.answer(
-            f"✅ **Режим «{mode}» активирован!**",
-            parse_mode="Markdown"
+            f"✅ <b>Режим «{mode}» активирован!</b>",
+            parse_mode="HTML"
         )
         return
 
@@ -604,12 +607,12 @@ async def callback_handler(callback: types.CallbackQuery):
     if callback.data == "stats":
         stats = db.get_user_stats(user_id)
         await callback.message.answer(
-            f"📊 **Твоя статистика:**\n\n"
+            f"📊 <b>Твоя статистика:</b>\n\n"
             f"• Сообщений: {stats['messages']}\n"
             f"• 👍 Лайков: {stats['likes']}\n"
             f"• 👎 Дизлайков: {stats['dislikes']}\n\n"
             f"Всего пользователей: {db.get_all_users_count()}",
-            parse_mode="Markdown"
+            parse_mode="HTML"
         )
         return
 
@@ -617,11 +620,11 @@ async def callback_handler(callback: types.CallbackQuery):
     if is_admin(user_id):
         if callback.data == "admin_menu":
             prompts = db.get_all_prompts()
-            text = "📋 **Системные промпты:**\n\n"
+            text = "📋 <b>Системные промпты:</b>\n\n"
             for mode, prompt in prompts.items():
                 short_prompt = prompt[:50] + "..." if len(prompt) > 50 else prompt
-                text += f"• **{mode}**: {short_prompt}\n\n"
-            await callback.message.answer(text, parse_mode="Markdown")
+                text += f"• <b>{mode}</b>: {short_prompt}\n\n"
+            await callback.message.answer(text, parse_mode="HTML")
             return
 
 
@@ -638,15 +641,15 @@ async def handle_message(message: types.Message):
             admin_states['new_mode_name'] = mode_name
             admin_states.pop('awaiting_mode_name')
             admin_states['awaiting_mode_prompt'] = user_id
-            await message.answer(f"✅ Название: **{mode_name}**\n\nТеперь отправь текст промпта:", parse_mode="Markdown")
+            await message.answer(f"✅ Название: <b>{mode_name}</b>\n\nТеперь отправь текст промпта:", parse_mode="HTML")
             return
 
         if 'awaiting_mode_prompt' in admin_states:
             mode_name = admin_states.get('new_mode_name')
             if db.add_prompt(mode_name, message.text):
-                await message.answer(f"✅ Режим **{mode_name}** создан!")
+                await message.answer(f"✅ Режим <b>{mode_name}</b> создан!", parse_mode="HTML")
             else:
-                await message.answer("❌ Ошибка: режим уже существует")
+                await message.answer("❌ Ошибка: режим уже существует", parse_mode="HTML")
             admin_states.pop('awaiting_mode_prompt', None)
             admin_states.pop('new_mode_name', None)
             return
@@ -654,9 +657,9 @@ async def handle_message(message: types.Message):
         for mode, admin_id in list(admin_states.items()):
             if admin_id == user_id and mode not in ['awaiting_mode_name', 'awaiting_mode_prompt']:
                 if db.update_prompt(mode, message.text):
-                    await message.answer(f"✅ Промпт для **{mode}** обновлён!")
+                    await message.answer(f"✅ Промпт для <b>{mode}</b> обновлён!", parse_mode="HTML")
                 else:
-                    await message.answer("❌ Ошибка при обновлении")
+                    await message.answer("❌ Ошибка при обновлении", parse_mode="HTML")
                 admin_states.pop(mode)
                 return
 
@@ -689,11 +692,11 @@ async def handle_message(message: types.Message):
     keyboard.add(InlineKeyboardButton(text="👍", callback_data=f"like_{message_id}"))
     keyboard.add(InlineKeyboardButton(text="👎", callback_data=f"dislike_{message_id}"))
 
-    voice_hint = "\n\n_Также ты можешь отправить голосовое сообщение!_" if VOICE_ENABLED else ""
+    voice_hint = "\n\n<i>Также ты можешь отправить голосовое сообщение!</i>" if VOICE_ENABLED else ""
 
     await message.answer(
         response + voice_hint,
-        parse_mode="Markdown",
+        parse_mode="HTML",
         reply_markup=keyboard.as_markup()
     )
 
